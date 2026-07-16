@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+import os
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from typing import Any
 import numpy as np
@@ -22,7 +23,10 @@ def fit(values: pd.Series, seasonal_periods: int):
 def health(): return {"ok": True}
 
 @app.post("/forecast")
-def forecast(request: ForecastRequest):
+def forecast(request: ForecastRequest, authorization: str | None = Header(default=None)):
+    service_token = os.getenv("ANALYTICS_SERVICE_TOKEN")
+    if service_token and authorization != f"Bearer {service_token}":
+        raise HTTPException(401, "Service authentication is required.")
     frame = pd.DataFrame(request.rows)
     if request.field not in frame:
         raise HTTPException(422, f"Field '{request.field}' is not present in the submitted rows.")

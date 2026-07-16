@@ -105,6 +105,7 @@ Try uploading a small CSV or JSON file, then ask:
 7. Open **SQL Editor** in Supabase.
 8. Open this file on your computer: `server/sql/001_init.sql`.
 9. Copy everything in that file, paste it into Supabase SQL Editor, and click **Run**.
+10. Then do the same with `server/sql/002_demo_security.sql`.
 
 You only do this database-table step once.
 
@@ -192,7 +193,10 @@ OIDC_AUDIENCE=trueanalyzer-api
 LLM_API_URL=https://api.groq.com/openai/v1/chat/completions
 LLM_API_KEY=the Groq key from Step 6
 LLM_MODEL=llama-3.3-70b-versatile
+ANALYTICS_SERVICE_TOKEN=make-up-one-long-random-secret
 ```
+
+Open the analytics service in Render too, add the **same** `ANALYTICS_SERVICE_TOKEN`, and save it. This lets the API talk to the forecast service while blocking other people from using it.
 
 6. Click **Deploy Web Service**.
 7. Check this link:
@@ -221,6 +225,20 @@ These parts need the next code update:
 - Seeing shared workspaces and audit history in the website
 
 Until then, the Vercel website is a browser-only demo. That is okay for showing the design and the data-analysis features with sample files.
+
+## Step 9: Turn on the connected demo
+
+After you push the new code, open `runtime-config.js` and fill in these three public values:
+
+```javascript
+apiBaseUrl: "https://YOUR-API-SERVICE.onrender.com",
+auth0Domain: "YOUR-AUTH0-DOMAIN",
+auth0ClientId: "YOUR-AUTH0-CLIENT-ID",
+```
+
+The Auth0 client ID is safe to put in this file. Do **not** put any password, database URL, Redis URL, or Groq key there.
+
+Push the changed file to GitHub. Vercel will publish the updated website automatically. Then open the website, click **Sign in**, and use Auth0 to create your first workspace.
 
 ## If something goes wrong
 
