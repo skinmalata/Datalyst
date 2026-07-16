@@ -1,0 +1,1 @@
+import Link from "next/link";export default function Dashboards(){return <main className="p-8"><h1 className="text-3xl font-bold">Dashboards</h1><p className="mt-3 text-text-secondary">Saved dashboards will appear here.</p><Link href="/dashboard" className="mt-6 inline-block text-primary">Back to workspace</Link></main>}

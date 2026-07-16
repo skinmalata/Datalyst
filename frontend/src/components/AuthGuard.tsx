@@ -1,0 +1,1 @@
+"use client";import {useAuthStore} from "@/store/authStore";export function AuthGuard({children}:{children:React.ReactNode}){const token=useAuthStore(s=>s.token);return token?<>{children}</>:<>{children}</>}

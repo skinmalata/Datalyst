@@ -1,0 +1,1 @@
+import Link from "next/link";export function Sidebar(){return <aside className="hidden w-60 border-r border-border p-5 lg:block"><b>DATALYST</b><nav className="mt-8 grid gap-3 text-text-secondary"><Link href="/dashboard">Workspace</Link><Link href="/dashboards">Dashboards</Link><Link href="/settings">Settings</Link></nav></aside>}

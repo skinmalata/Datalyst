@@ -1,0 +1,1 @@
+"use client";import {create} from "zustand";type Auth={token:string;organizationId:string;setSession:(token:string,organizationId:string)=>void;logout:()=>void};export const useAuthStore=create<Auth>(set=>({token:"",organizationId:"",setSession:(token,organizationId)=>set({token,organizationId}),logout:()=>set({token:"",organizationId:""})}));

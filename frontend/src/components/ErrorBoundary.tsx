@@ -1,0 +1,1 @@
+"use client";import {Component,ReactNode} from "react";export class ErrorBoundary extends Component<{children:ReactNode},{failed:boolean}>{state={failed:false};static getDerivedStateFromError(){return {failed:true}}render(){return this.state.failed?<p className="p-4 text-red-300">Something went wrong. Please refresh and try again.</p>:this.props.children}}

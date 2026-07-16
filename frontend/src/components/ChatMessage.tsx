@@ -1,0 +1,1 @@
+import ReactMarkdown from "react-markdown";export function ChatMessage({role,content}:{role:"user"|"assistant";content:string}){return <article className={role==="user"?"ml-12 rounded-xl bg-primary p-4":"mr-12 rounded-xl bg-surface p-4"}><ReactMarkdown>{content}</ReactMarkdown></article>}

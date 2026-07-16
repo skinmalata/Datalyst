@@ -1,0 +1,1 @@
+import {parseDataFile} from "@/lib/file-parser";test("selects the largest table after report notes",()=>{const rows=parseDataFile("# report\nMetric,Value\nA,1\n# next\nPage,Views\nHome,20\nBlog,10","report.csv");expect(rows).toEqual([{Page:"Home",Views:"20"},{Page:"Blog",Views:"10"}])});
