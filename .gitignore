@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+uploads/
+node_modules/
+server/node_modules/
+server/dist/
+__pycache__/
+*.py[cod]
+.DS_Store
