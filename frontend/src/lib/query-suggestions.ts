@@ -27,43 +27,43 @@ export function generateSuggestedQueries(rows: Record<string, unknown>[]): Sugge
   const rateMetric = rankedMetrics.find(isRate);
 
   const suggestions: SuggestedQuery[] = [
-    { question: "What is our overall " + metric + "?", description: "Start with the headline number leadership needs to know." },
-    { question: "Which " + dimension + " is driving the most " + metric + "?", description: "Identify the strongest contributor to performance." },
-    { question: "What are the top 5 " + dimension + " by " + metric + "?", description: "Focus the team on the highest-impact areas." },
-    { question: "Are there unusual " + metric + " values we should investigate?", description: "Surface possible risks, errors, or exceptional opportunities." },
-    { question: "What is the average " + metric + "?", description: "Understand the typical result, not only the total." },
+    { question: "How are we performing overall on " + metric + "?", description: "Start with the headline result for our business." },
+    { question: "Which " + dimension + " is driving our " + metric + "?", description: "See what is contributing most to our performance." },
+    { question: "What are our top 5 " + dimension + " by " + metric + "?", description: "Focus our team on the highest-impact areas." },
+    { question: "Where are we seeing unusual " + metric + " values?", description: "Surface risks, errors, or exceptional opportunities we should investigate." },
+    { question: "What does a typical " + metric + " look like for us?", description: "Understand normal performance, not only the total." },
   ];
 
   if (dateColumn) {
     suggestions.push(
-      { question: "How has " + metric + " changed over time using " + dateColumn + "?", description: "See whether performance is improving, flat, or declining." },
-      { question: "What should we expect for " + metric + " next?", description: "Use the available history to form a directional forecast." },
+      { question: "Is our " + metric + " improving or declining over time?", description: "See whether we are moving in the right direction." },
+      { question: "What should we expect for our " + metric + " next?", description: "Use our available history to form a directional forecast." },
     );
   } else {
     suggestions.push(
-      { question: "Which " + dimension + " should we prioritize based on " + metric + "?", description: "Turn the ranking into a practical leadership priority." },
-      { question: "Show the top 10 " + dimension + " by " + metric + ".", description: "Review the broader set of meaningful contributors." },
+      { question: "Which " + dimension + " should we prioritize based on " + metric + "?", description: "Turn our ranking into a practical leadership priority." },
+      { question: "Which 10 " + dimension + " matter most to our " + metric + "?", description: "Review the broader set of meaningful contributors." },
     );
   }
 
   if (secondaryMetric !== metric) {
     suggestions.push(
-      { question: "Which " + dimension + " is strongest by " + secondaryMetric + "?", description: "Check whether the same areas lead on a second important measure." },
-      { question: "Are there unusual " + secondaryMetric + " values?", description: "Look for exceptions in the supporting measure." },
+      { question: "Which " + dimension + " is strongest for our " + secondaryMetric + "?", description: "Check whether the same areas lead on a second important measure." },
+      { question: "Where are we seeing unusual " + secondaryMetric + " values?", description: "Look for exceptions in a supporting measure." },
     );
   } else {
     suggestions.push(
-      { question: "Show " + metric + " by " + dimension + ".", description: "Compare performance across the available business groups." },
-      { question: "Which " + dimension + " has the highest " + metric + "?", description: "Confirm the clearest performance leader." },
+      { question: "How does our " + metric + " compare across " + dimension + "?", description: "Compare performance across our available business groups." },
+      { question: "Which " + dimension + " is our clear " + metric + " leader?", description: "Confirm the strongest area for our business." },
     );
   }
 
   if (rateMetric && rateMetric !== metric) {
-    suggestions.push({ question: "Which " + dimension + " has the highest " + rateMetric + "?", description: "Find areas where the quality or conversion signal needs attention." });
+    suggestions.push({ question: "Which " + dimension + " has the highest " + rateMetric + " in our business?", description: "Find areas where our quality or conversion signal needs attention." });
   } else if (secondDimension) {
-    suggestions.push({ question: "Which " + secondDimension + " contributes most to " + metric + "?", description: "Compare performance through a second business lens." });
+    suggestions.push({ question: "Which " + secondDimension + " contributes most to our " + metric + "?", description: "Compare our performance through a second business lens." });
   } else {
-    suggestions.push({ question: "Show the top 5 " + dimension + " by " + metric + ".", description: "Revisit the highest-impact areas for an executive summary." });
+    suggestions.push({ question: "Which top 5 " + dimension + " should we watch most closely?", description: "Revisit our highest-impact areas for an executive summary." });
   }
 
   return suggestions.slice(0, 10);
