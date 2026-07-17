@@ -13,7 +13,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true;
     const start = async () => {
-      const settings = config(), redirectUri = location.origin, store = useAuthStore.getState();
+      const settings = config(), redirectUri = location.origin + "/dashboard", store = useAuthStore.getState();
       if (!settings.auth0Domain || !settings.auth0ClientId) {
         store.setError("Sign-in is not configured for this deployment."); store.setReady(true); return;
       }
