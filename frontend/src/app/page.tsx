@@ -119,8 +119,8 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-6">
           <p className="text-center text-xs font-semibold uppercase tracking-widest text-primary">How it works</p>
           <h2 className="mt-3 text-center text-3xl font-bold">Three steps to insight</h2>
-        <div className="mt-12 grid gap-8 lg:grid-cols-[1fr_1fr]">
-          <div className="grid gap-8 md:grid-cols-3 lg:col-span-2">
+        <div className="mt-12 space-y-8">
+          <div className="grid gap-8 md:grid-cols-3">
           {steps.map(s => (
               <div key={s.num} className="rounded-2xl border border-border bg-surface p-8">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-sm">{s.num}</div>
@@ -129,7 +129,7 @@ export default function Home() {
               </div>
           ))}
           </div>
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-surface lg:col-span-2">
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-surface">
             <Image
               src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85"
               alt="A team collaborating around business data"
