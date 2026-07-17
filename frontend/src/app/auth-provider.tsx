@@ -23,7 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const logout = async () => { useAuthStore.getState().clear(); setApiSession(() => "", () => ""); await client.logout({ logoutParams: { returnTo: location.origin } }); };
       store.setActions(login, signup, logout);
       const hasCallback = location.search.includes("code=") && location.search.includes("state=");
-      if (hasCallback) await client.handleRedirectCallback();
+      if (hasCallback) { await client.handleRedirectCallback(); history.replaceState({}, document.title, location.pathname); }
       if (!(await client.isAuthenticated())) { if (active) useAuthStore.getState().setReady(true); return; }
       const token = await client.getTokenSilently();
       let organizationId = localStorage.getItem("datalyst.organizationId") || "";
