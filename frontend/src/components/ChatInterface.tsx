@@ -1,6 +1,7 @@
 "use client";
 import { api } from "@/lib/api-client";
 import { generateSuggestedQueries } from "@/lib/query-suggestions";
+import { chartForResult } from "@/lib/result-visualization";
 import { useStore } from "@/store/useStore";
 import { QueryInput } from "./QueryInput";
 import { ChartViewer } from "./ChartViewer";
@@ -33,11 +34,11 @@ export function ChatInterface() {
     try {
       const plan = await api<any>("/api/analyses/plan", { method: "POST", body: JSON.stringify({ datasetId, question }) });
       const result = await api<any>("/api/analyses", { method: "POST", body: JSON.stringify({ datasetId, question, plan }) });
-      const output = result.result, values = output.values || [];
-      add({ id: crypto.randomUUID(), role: "assistant", content: executiveAnswer(output), values });
+      const output = result.result, chart = chartForResult(output);
+      add({ id: crypto.randomUUID(), role: "assistant", content: executiveAnswer(output), ...chart });
     } catch (error) {
       add({ id: crypto.randomUUID(), role: "assistant", content: error instanceof Error ? error.message : "Analysis could not be completed." });
     } finally { setLoading(false); }
   };
-  return <div className="mx-auto flex max-w-4xl flex-col gap-5"><div><p className="mb-1 text-sm font-semibold text-text-secondary">Recommended leadership questions</p><p className="mb-3 text-sm text-text-muted">Ten questions tailored to the measures and business dimensions in your uploaded data.</p><div className="grid gap-2 sm:grid-cols-2">{questions.map(({ question, description }) => <button key={question} onClick={() => ask(question)} className="rounded-lg border border-border bg-surface p-4 text-left"><b>{question}</b><span className="mt-1 block text-sm text-text-muted">{description}</span></button>)}</div></div>{messages.map((message) => <article key={message.id} className={message.role === "user" ? "ml-12 rounded-xl bg-primary p-4" : "mr-12 rounded-xl bg-surface p-4"}><p>{message.content}</p>{message.values?.length ? <ChartViewer data={message.values} /> : null}</article>)}{loading ? <p className="text-text-muted">Checking your data…</p> : null}<QueryInput disabled={!datasetId || loading} onSubmit={ask} /></div>;
+  return <div className="mx-auto flex max-w-4xl flex-col gap-5"><div><p className="mb-1 text-sm font-semibold text-text-secondary">Recommended leadership questions</p><p className="mb-3 text-sm text-text-muted">Ten questions tailored to the measures and business dimensions in your uploaded data.</p><div className="grid gap-2 sm:grid-cols-2">{questions.map(({ question, description }) => <button key={question} onClick={() => ask(question)} className="rounded-lg border border-border bg-surface p-4 text-left"><b>{question}</b><span className="mt-1 block text-sm text-text-muted">{description}</span></button>)}</div></div>{messages.map((message) => <article key={message.id} className={message.role === "user" ? "ml-12 rounded-xl bg-primary p-4" : "mr-12 rounded-xl bg-surface p-4"}><p>{message.content}</p>{message.values?.length ? <div className="mt-4"><ChartViewer data={message.values} type={message.chartType} /></div> : null}</article>)}{loading ? <p className="text-text-muted">Checking your data…</p> : null}<QueryInput disabled={!datasetId || loading} onSubmit={ask} /></div>;
 }
