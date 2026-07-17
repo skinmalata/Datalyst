@@ -1,56 +1,71 @@
 const dateHints = /date|time|month|year|quarter|day|week|period|created|updated|timestamp/i;
-const numericHints = /sales|revenue|amount|profit|price|cost|count|total|quantity|orders|views|visits|bounce|rate|score|margin|growth|units/i;
-const categoryHints = /region|category|product|segment|channel|type|status|department|team|country|state|city|customer|supplier|brand|class|group/i;
 
 function isDate(col: string) { return dateHints.test(col); }
-function isNumeric(val: unknown) { return typeof val === "number" || (typeof val === "string" && val !== "" && !isNaN(Number(val))); }
+function isNumericVal(val: unknown) { return typeof val === "number" || (typeof val === "string" && val !== "" && !isNaN(Number(val))); }
+
+function numericCols(rows: Record<string, unknown>[], columns: string[]) {
+  return columns.filter(c => rows.some(r => r[c] !== null && r[c] !== undefined && r[c] !== "" && isNumericVal(r[c])));
+}
+
+function categoricalCols(rows: Record<string, unknown>[], columns: string[], exclude: string[]) {
+  return columns.filter(c => !exclude.includes(c) && !isDate(c) && rows.some(r => {
+    const v = r[c];
+    return v !== null && v !== undefined && v !== "" && !isNumericVal(v);
+  }));
+}
 
 export function suggestQueries(rows: Record<string, unknown>[]): { question: string; description: string }[] {
   if (!rows.length) return [];
   const columns = Object.keys(rows[0]);
-  const dateCol = columns.find(isDate);
-  const numericCols = columns.filter(c => {
-    const sample = rows.find(r => r[c] !== null && r[c] !== undefined && r[c] !== "");
-    return sample && isNumeric(sample[c]) && numericHints.test(c);
-  });
-  const allNumericCols = columns.filter(c => {
-    const sample = rows.find(r => r[c] !== null && r[c] !== undefined && r[c] !== "");
-    return sample && isNumeric(sample[c]);
-  });
-  const catCols = columns.filter(isNumeric).length === 0 ? columns.filter(c => !isDate(c)) : columns.filter(c => !isDate(c) && !allNumericCols.includes(c));
-  const topNumeric = numericCols.length ? numericCols : allNumericCols;
-  const measure = topNumeric[0] || "value";
-  const dimension = catCols[0] || columns.find(c => !isDate(c) && c !== measure) || columns[0];
-  const suggestions: { question: string; description: string }[] = [];
+  const nums = numericCols(rows, columns);
+  const dates = columns.filter(isDate);
+  const cats = categoricalCols(rows, columns, [...nums, ...dates]);
+  const m1 = nums[0] || "value";
+  const m2 = nums[1];
+  const c1 = cats[0] || columns.find(c => !isDate(c) && !nums.includes(c));
+  const c2 = cats[1];
+  const d1 = dates[0];
+  const m1l = m1.toLowerCase();
+  const c1l = c1 ? c1.toLowerCase() : "";
 
-  if (dimension && measure) {
-    const dimLower = dimension.toLowerCase();
-    suggestions.push({
-      question: `Which ${dimLower} has the highest ${measure.toLowerCase()}?`,
-      description: `Rank your ${dimLower} by ${measure.toLowerCase()} to see top performers.`
-    });
+  const pool: { question: string; description: string }[] = [];
+
+  if (c1) {
+    pool.push({ question: `Which ${c1l} has the highest ${m1l}?`, description: `Rank your ${c1l} by ${m1l} to see top performers.` });
+    pool.push({ question: `Which ${c1l} has the lowest ${m1l}?`, description: `Find underperforming ${c1l} that need attention.` });
   }
 
-  if (dateCol && measure) {
-    suggestions.push({
-      question: `Show ${measure.toLowerCase()} trend over time`,
-      description: `See how ${measure.toLowerCase()} changes across ${dateCol.toLowerCase()}.`
-    });
+  if (d1) {
+    pool.push({ question: `Show ${m1l} trend over time`, description: `See how ${m1l} changes across ${d1.toLowerCase()}.` });
   }
 
-  if (measure) {
-    suggestions.push({
-      question: `Find outliers in ${measure.toLowerCase()}`,
-      description: `Spot unusual ${measure.toLowerCase()} values worth investigating.`
-    });
+  pool.push({ question: `Find outliers in ${m1l}`, description: `Spot unusual ${m1l} values worth investigating.` });
+
+  if (c1) {
+    pool.push({ question: `Compare ${m1l} across ${c1l}`, description: `See which ${c1l} groups lead or lag.` });
   }
 
-  if (dimension && measure) {
-    suggestions.push({
-      question: `Compare ${measure.toLowerCase()} across ${dimension.toLowerCase()}`,
-      description: `See which ${dimension.toLowerCase()} groups lead or lag.`
-    });
+  pool.push({ question: `What is the average ${m1l}?`, description: `Get a summary of the typical ${m1l} across all records.` });
+
+  if (m2) {
+    const m2l = m2.toLowerCase();
+    pool.push({ question: `How does ${m1l} relate to ${m2l}?`, description: `Compare the two numeric measures side by side.` });
   }
 
-  return suggestions.slice(0, 4);
+  if (d1 && c1) {
+    pool.push({ question: `Show ${m1l} by ${c1l} over time`, description: `Track how each ${c1l} performs across ${d1.toLowerCase()}.` });
+  }
+
+  if (c2) {
+    const c2l = c2.toLowerCase();
+    pool.push({ question: `Compare ${m1l} by ${c1l} and ${c2l}`, description: `Cross-analyze two dimensions to find patterns.` });
+  }
+
+  pool.push({ question: `What does the data distribution of ${m1l} look like?`, description: `Understand the spread and concentration of ${m1l} values.` });
+
+  if (pool.length < 10) {
+    pool.push({ question: `Show the top 10 records by ${m1l}`, description: `List the highest ${m1l} entries in the dataset.` });
+  }
+
+  return pool.slice(0, 10);
 }
