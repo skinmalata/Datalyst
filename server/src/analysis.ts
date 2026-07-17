@@ -19,6 +19,7 @@ function numeric(value: unknown) {
   const parsed = Number(String(value ?? "").replace(/[$,]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
+function isRateField(field: string) { return /(rate|margin|percent|percentage)/i.test(field); }
 function matches(row: Row, filter: Filter) {
   const source = row[filter.field];
   const sourceNumber = numeric(source), filterNumber = numeric(filter.value);
@@ -50,6 +51,16 @@ export function validatePlan(plan: Plan, columns: string[]) {
 
 export function executePlan(rows: Row[], plan: Plan) {
   const selected = filtered(rows, plan.filters);
+  if (plan.operation === "top_values" && isRateField(plan.field)) {
+    const groups = new Map<string, { total:number; count:number }>();
+    selected.forEach(row => {
+      const value=numeric(row[plan.field]); if(value===null) return;
+      const key=String(row[plan.groupBy!] ?? "Unknown"), current=groups.get(key)||{total:0,count:0};
+      current.total+=value; current.count++; groups.set(key,current);
+    });
+    const values=[...groups].map(([label,group])=>({label,value:group.total/group.count})).sort((a,b)=>b.value-a.value).slice(0,plan.limit||5);
+    return { values, recordsUsed:selected.length, method:"Average of "+plan.field+" grouped by "+plan.groupBy, evidence:{recordsInput:rows.length,recordsMatched:selected.length,filters:plan.filters||[],aggregation:"average for rate metric"} };
+  }
   if (plan.operation === "anomalies") {
     const values = selected.map((row, index) => ({ row, index, value: numeric(row[plan.field]) })).filter((item): item is { row: Row; index: number; value: number } => item.value !== null);
     const mean = values.reduce((total, item) => total + item.value, 0) / Math.max(values.length, 1);
