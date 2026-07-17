@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const features = [
@@ -68,8 +69,8 @@ export default function Home() {
       </nav>
 
       {/* HERO */}
-      <section className="mx-auto max-w-6xl px-6 pb-20 pt-20 text-center">
-        <div className="mx-auto max-w-3xl">
+      <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-20 pt-20 lg:grid-cols-[1fr_0.9fr] lg:text-left">
+        <div className="mx-auto max-w-3xl lg:mx-0">
           <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-primary">The Decision Intelligence Platform</p>
           <h1 className="text-5xl font-bold leading-tight md:text-6xl">
             Turn trusted data into<br />clear decisions.
@@ -77,7 +78,7 @@ export default function Home() {
           <p className="mx-auto mt-6 max-w-xl text-lg text-text-secondary">
             Ask business questions in plain language. Get evidence-backed answers with charts, forecasts, and governance — all in one workspace.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-4">
+          <div className="mt-8 flex items-center justify-center gap-4 lg:justify-start">
             <Link href="/dashboard" className="rounded-lg bg-primary px-6 py-3 font-semibold transition-opacity hover:opacity-90">
               Explore the workspace
             </Link>
@@ -86,9 +87,24 @@ export default function Home() {
             </a>
           </div>
         </div>
+        <div className="relative overflow-hidden rounded-3xl border border-primary/30 bg-surface p-2 shadow-2xl shadow-primary/20">
+          <Image
+            src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=1200&q=85"
+            alt="Business analytics dashboard displayed on a screen"
+            width={1200}
+            height={900}
+            priority
+            className="aspect-[4/3] rounded-2xl object-cover opacity-90"
+          />
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-background/65 via-transparent to-primary/10" />
+          <div className="absolute bottom-7 left-7 rounded-xl border border-white/15 bg-background/80 px-4 py-3 backdrop-blur">
+            <p className="text-xs font-semibold text-primary">EVIDENCE, NOT GUESSWORK</p>
+            <p className="mt-1 text-sm text-text-secondary">Clear methods behind every answer.</p>
+          </div>
+        </div>
 
         {/* STATS BAR */}
-        <div className="mx-auto mt-16 grid max-w-3xl grid-cols-2 gap-6 rounded-2xl border border-border bg-surface p-8 md:grid-cols-4">
+        <div className="mx-auto mt-16 grid max-w-3xl grid-cols-2 gap-6 rounded-2xl border border-border bg-surface p-8 md:grid-cols-4 lg:col-span-2">
           {stats.map(s => (
             <div key={s.label} className="text-center">
               <div className="text-2xl font-bold text-primary">{s.value}</div>
@@ -103,15 +119,32 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-6">
           <p className="text-center text-xs font-semibold uppercase tracking-widest text-primary">How it works</p>
           <h2 className="mt-3 text-center text-3xl font-bold">Three steps to insight</h2>
-          <div className="mt-12 grid gap-8 md:grid-cols-3">
-            {steps.map(s => (
+        <div className="mt-12 grid gap-8 lg:grid-cols-[1fr_1fr]">
+          <div className="grid gap-8 md:grid-cols-3 lg:col-span-2">
+          {steps.map(s => (
               <div key={s.num} className="rounded-2xl border border-border bg-surface p-8">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-sm">{s.num}</div>
                 <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-text-secondary">{s.desc}</p>
               </div>
-            ))}
+          ))}
           </div>
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-surface lg:col-span-2">
+            <Image
+              src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85"
+              alt="A team collaborating around business data"
+              width={1400}
+              height={520}
+              className="h-56 w-full object-cover opacity-65"
+            />
+            <div className="absolute inset-0 flex items-end bg-gradient-to-t from-background via-background/20 to-transparent p-7">
+              <div className="max-w-md">
+                <p className="text-xs font-semibold uppercase tracking-widest text-primary">Built for teams</p>
+                <p className="mt-2 text-lg font-bold">Move from a question to an explainable decision together.</p>
+              </div>
+            </div>
+          </div>
+        </div>
         </div>
       </section>
 
