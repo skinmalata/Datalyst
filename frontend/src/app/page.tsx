@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import Navbar from "@/components/Navbar";
 
 const features = [
   { icon: "💬", title: "Ask in plain language", desc: "Type a business question in words you already use. No SQL, no code, no training needed." },
@@ -57,16 +58,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background text-white">
       {/* NAV */}
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <div className="flex items-center gap-2 text-lg font-bold">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm">D</span>
-          DATALYST
-        </div>
-        <div className="flex items-center gap-4">
-          <Link href="/login" className="text-sm text-text-secondary hover:text-white transition-colors">Log in</Link>
-          <Link href="/register" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold hover:opacity-90 transition-opacity">Start free</Link>
-        </div>
-      </nav>
+      <Navbar />
 
       {/* HERO */}
       <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-20 pt-20 lg:grid-cols-[1fr_0.9fr] lg:text-left">
@@ -119,32 +111,32 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-6">
           <p className="text-center text-xs font-semibold uppercase tracking-widest text-primary">How it works</p>
           <h2 className="mt-3 text-center text-3xl font-bold">Three steps to insight</h2>
-        <div className="mt-12 space-y-8">
-          <div className="grid gap-8 md:grid-cols-3">
-          {steps.map(s => (
-              <div key={s.num} className="rounded-2xl border border-border bg-surface p-8">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-sm">{s.num}</div>
-                <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-text-secondary">{s.desc}</p>
-              </div>
-          ))}
-          </div>
-          <div className="relative overflow-hidden rounded-2xl border border-border bg-surface">
-            <Image
-              src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85"
-              alt="A team collaborating around business data"
-              width={1400}
-              height={520}
-              className="h-56 w-full object-cover opacity-65"
-            />
-            <div className="absolute inset-0 flex items-end bg-gradient-to-t from-background via-background/20 to-transparent p-7">
-              <div className="max-w-md">
-                <p className="text-xs font-semibold uppercase tracking-widest text-primary">Built for teams</p>
-                <p className="mt-2 text-lg font-bold">Move from a question to an explainable decision together.</p>
+          <div className="mt-12 space-y-8">
+            <div className="grid gap-8 md:grid-cols-3">
+              {steps.map(s => (
+                <div key={s.num} className="rounded-2xl border border-border bg-surface p-8">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-sm">{s.num}</div>
+                  <h3 className="mt-4 text-lg font-bold">{s.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-text-secondary">{s.desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-border bg-surface">
+              <Image
+                src="https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85"
+                alt="A team collaborating around business data"
+                width={1400}
+                height={520}
+                className="h-56 w-full object-cover opacity-65"
+              />
+              <div className="absolute inset-0 flex items-end bg-gradient-to-t from-background via-background/20 to-transparent p-7">
+                <div className="max-w-md">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-primary">Built for teams</p>
+                  <p className="mt-2 text-lg font-bold">Move from a question to an explainable decision together.</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
         </div>
       </section>
 
@@ -161,6 +153,48 @@ export default function Home() {
                 <p className="mt-2 text-sm leading-relaxed text-text-secondary">{f.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ABOUT */}
+      <section id="about" className="border-t border-border py-20">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="grid items-center gap-12 lg:grid-cols-[0.9fr_1fr]">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-primary">About Datalyst</p>
+              <h2 className="mt-3 text-3xl font-bold">Built for teams that move with clarity</h2>
+              <p className="mt-4 text-text-secondary leading-relaxed">
+                Datalyst was created because every team deserves fast, trustworthy answers from their data — without waiting on analysts, writing SQL, or guessing at spreadsheets.
+              </p>
+              <p className="mt-3 text-text-secondary leading-relaxed">
+                We combine natural language querying, governed metrics, and transparent methods so your decisions are backed by evidence, not gut instinct.
+              </p>
+              <div className="mt-8 grid grid-cols-2 gap-6">
+                <div>
+                  <p className="text-2xl font-bold text-primary">2024</p>
+                  <p className="mt-1 text-sm text-text-muted">Founded</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-primary">50+</p>
+                  <p className="mt-1 text-sm text-text-muted">Teams onboarded</p>
+                </div>
+              </div>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-border bg-surface">
+              <Image
+                src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=1200&q=85"
+                alt="A diverse team collaborating at a whiteboard"
+                width={1200}
+                height={800}
+                className="h-72 w-full object-cover opacity-80"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+              <div className="absolute bottom-6 left-6">
+                <p className="text-sm font-semibold">Our mission</p>
+                <p className="mt-1 text-sm text-text-secondary">Make every data-informed decision faster, clearer, and more accountable.</p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -265,6 +299,37 @@ export default function Home() {
         </div>
       </section>
 
+      {/* CONTACT */}
+      <section id="contact" className="border-t border-border py-20">
+        <div className="mx-auto max-w-3xl px-6 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">Contact</p>
+          <h2 className="mt-3 text-3xl font-bold">Get in touch</h2>
+          <p className="mx-auto mt-3 max-w-lg text-sm text-text-secondary">
+            Have a question, want a demo, or need help with your plan? We&apos;d love to hear from you.
+          </p>
+          <div className="mt-10 grid gap-6 sm:grid-cols-3">
+            <div className="rounded-2xl border border-border bg-surface p-6">
+              <div className="text-2xl">💬</div>
+              <h3 className="mt-3 font-bold">Sales</h3>
+              <p className="mt-2 text-sm text-text-secondary">Talk to our team about plans, pricing, and enterprise options.</p>
+              <a href="mailto:sales@datalyst.io" className="mt-4 inline-block text-sm font-semibold text-primary hover:underline">sales@datalyst.io</a>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface p-6">
+              <div className="text-2xl">🛠️</div>
+              <h3 className="mt-3 font-bold">Support</h3>
+              <p className="mt-2 text-sm text-text-secondary">Get help with your account, billing, or technical issues.</p>
+              <a href="mailto:support@datalyst.io" className="mt-4 inline-block text-sm font-semibold text-primary hover:underline">support@datalyst.io</a>
+            </div>
+            <div className="rounded-2xl border border-border bg-surface p-6">
+              <div className="text-2xl">🤝</div>
+              <h3 className="mt-3 font-bold">Partnerships</h3>
+              <p className="mt-2 text-sm text-text-secondary">Explore integration and reseller opportunities.</p>
+              <a href="mailto:partners@datalyst.io" className="mt-4 inline-block text-sm font-semibold text-primary hover:underline">partners@datalyst.io</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* FOOTER */}
       <footer className="border-t border-border py-12">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 text-sm text-text-muted md:flex-row">
@@ -273,8 +338,10 @@ export default function Home() {
             DATALYST
           </div>
           <div className="flex gap-6">
+            <a href="#about" className="hover:text-white transition-colors">About</a>
             <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
             <a href="#pricing" className="hover:text-white transition-colors">Pricing</a>
+            <a href="#contact" className="hover:text-white transition-colors">Contact</a>
             <Link href="/login" className="hover:text-white transition-colors">Log in</Link>
           </div>
           <span>Decision intelligence for teams that move with clarity.</span>
