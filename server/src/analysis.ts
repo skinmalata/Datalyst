@@ -16,7 +16,7 @@ export type Plan = {
 };
 
 function numeric(value: unknown) {
-  const parsed = Number(String(value ?? "").replace(/[$,]/g, ""));
+  const parsed = Number(String(value ?? "").trim().replace(/^\((.*)\)$/, "-$1").replace(/[$,%\s,]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 function isRateField(field: string) { return /(rate|margin|percent|percentage)/i.test(field); }
@@ -52,34 +52,35 @@ export function validatePlan(plan: Plan, columns: string[]) {
   const filters = [...(plan.filters || []), ...(plan.comparisonFilters || [])];
   if (!plan || !operations.includes(plan.operation) || !columns.includes(plan.field) || (plan.timeField && !columns.includes(plan.timeField)) || (plan.groupBy && !columns.includes(plan.groupBy)) || filters.some(filter => !columns.includes(filter.field))) throw new Error("The analysis plan uses a field or operation that is not approved for this dataset.");
   if ((plan.operation === "top_values" || plan.operation === "bottom_values") && !plan.groupBy) throw new Error("A grouped analysis needs a groupBy field.");
-  if (plan.operation === "trend" && !plan.timeField) throw new Error("A trend analysis needs a time field.");
+  if ((plan.operation === "trend" || plan.operation === "forecast") && !plan.timeField) throw new Error("A trend or forecast analysis needs a time field.");
 }
 
 export function executePlan(rows: Row[], plan: Plan) {
   const selected = filtered(rows, plan.filters);
   if (plan.operation === "trend") {
     const buckets = new Map<string, number>();
+    let observations = 0;
     selected.forEach(row => {
       const date = new Date(String(row[plan.timeField!] ?? ""));
       const value = numeric(row[plan.field]);
       if (Number.isNaN(date.getTime()) || value === null) return;
       const period = String(date.getUTCFullYear()) + "-" + String(date.getUTCMonth() + 1).padStart(2, "0");
-      buckets.set(period, (buckets.get(period) || 0) + value);
+      buckets.set(period, (buckets.get(period) || 0) + value); observations++;
     });
     const values = [...buckets].sort((a,b) => a[0].localeCompare(b[0])).map(([label,value]) => ({label,value}));
     const first = values[0]?.value || 0, last = values.at(-1)?.value || 0;
     const percentChange = first === 0 ? null : Number((((last-first)/Math.abs(first))*100).toFixed(1));
-    return { values, recordsUsed:selected.length, method:"Monthly trend of "+plan.field, trend:{periods:values.length,first,last,percentChange}, evidence:{recordsInput:rows.length,recordsMatched:selected.length,filters:plan.filters||[]} };
+    return { values, recordsUsed:values.length, method:"Monthly trend of "+plan.field, trend:{periods:values.length,first,last,percentChange,observations}, evidence:{recordsInput:rows.length,recordsMatched:observations,filters:plan.filters||[]} };
   }
-  if (plan.operation === "top_values" && isRateField(plan.field)) {
+  if ((plan.operation === "top_values" || plan.operation === "bottom_values") && isRateField(plan.field)) {
     const groups = new Map<string, { total:number; count:number }>();
     selected.forEach(row => {
       const value=numeric(row[plan.field]); if(value===null) return;
       const key=String(row[plan.groupBy!] ?? "Unknown"), current=groups.get(key)||{total:0,count:0};
       current.total+=value; current.count++; groups.set(key,current);
     });
-    const values=[...groups].map(([label,group])=>({label,value:group.total/group.count})).sort((a,b)=>b.value-a.value).slice(0,plan.limit||5);
-    return { values, recordsUsed:selected.length, method:"Average of "+plan.field+" grouped by "+plan.groupBy, evidence:{recordsInput:rows.length,recordsMatched:selected.length,filters:plan.filters||[],aggregation:"average for rate metric"} };
+    const values=[...groups].map(([label,group])=>({label,value:group.total/group.count})).sort((a,b)=>plan.operation==="top_values"?b.value-a.value:a.value-b.value).slice(0,plan.limit||5);
+    return { values, recordsUsed:selected.length, method:(plan.operation==="top_values"?"Highest average of ":"Lowest average of ")+plan.field+" grouped by "+plan.groupBy, evidence:{recordsInput:rows.length,recordsMatched:selected.length,filters:plan.filters||[],aggregation:"average for rate metric"} };
   }
   if (plan.operation === "anomalies") {
     const values = selected.map((row, index) => ({ row, index, value: numeric(row[plan.field]) })).filter((item): item is { row: Row; index: number; value: number } => item.value !== null);

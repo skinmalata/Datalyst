@@ -1,6 +1,5 @@
-"use client";import {create} from "zustand";
+"use client";import {create} from "zustand";import type {PreparationReport} from "@/lib/data-preparation";
 export type Message={id:string;role:"user"|"assistant";content:string;values?:{label:string;value:number;zScore?:number}[];chartType?:"bar"|"line"|"pie"|"area"|"scatter"};
-export type DatasetProfile={records:number;columns:number;completeness:number;duplicateRows:number;warnings:string[]};
-export type PreparationReport={inputRows:number;outputRows:number;columns:number;transformations:string[];warnings:string[]};
+export type DatasetProfile={records:number;columns:number;completeness:number;duplicateRows:number;warnings:string[];fields:{name:string;kind:"number"|"date"|"category"|"text";populated:number;distinct:number;numeric?:{min:number;max:number;average:number}}[]};
 type State={rows:Record<string,unknown>[];datasetId:string;profile?:DatasetProfile;preparation?:PreparationReport;messages:Message[];loading:boolean;setDataset:(rows:Record<string,unknown>[],id:string,profile?:DatasetProfile,preparation?:PreparationReport)=>void;add:(message:Message)=>void;setLoading:(loading:boolean)=>void;reset:()=>void};
 export const useStore=create<State>(set=>({rows:[],datasetId:"",messages:[],loading:false,setDataset:(rows,datasetId,profile,preparation)=>set({rows,datasetId,profile,preparation,messages:[]}),add:message=>set(state=>({messages:[...state.messages,message]})),setLoading:loading=>set({loading}),reset:()=>set({rows:[],datasetId:"",profile:undefined,preparation:undefined,messages:[],loading:false})}));

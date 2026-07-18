@@ -13,7 +13,8 @@ function parseDelimitedLine(line: string, delimiter: string) {
 }
 export function parseDataFile(text: string, name: string): Record<string, unknown>[] {
   if (name.toLowerCase().endsWith(".json")) {
-    const data = JSON.parse(text);
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { throw new Error("This JSON file is not valid. Check for a missing comma, quote, or bracket and try again."); }
     if (!Array.isArray(data) || !data.every(item => item && typeof item === "object" && !Array.isArray(item))) throw new Error("JSON must contain a list of records.");
     return data as Record<string, unknown>[];
   }
