@@ -6,7 +6,7 @@ export type Filter = {
   value: string | number | boolean;
 };
 export type Plan = {
-  operation: "sum" | "average" | "top_values" | "forecast" | "anomalies";
+  operation: "sum" | "average" | "top_values" | "bottom_values" | "trend" | "forecast" | "anomalies";
   field: string;
   timeField?: string;
   groupBy?: string;
@@ -39,18 +39,38 @@ function aggregate(rows: Row[], plan: Plan) {
     values.forEach(item => { const key = String(item.row[plan.groupBy!] ?? "Unknown"); groups.set(key, (groups.get(key) || 0) + item.value); });
     return { values: [...groups].sort((a, b) => b[1] - a[1]).slice(0, plan.limit || 5).map(([label, value]) => ({ label, value })), recordsUsed: values.length, method: `Sum of ${plan.field} grouped by ${plan.groupBy}` };
   }
+  if (plan.operation === "bottom_values") {
+    const groups = new Map<string, number>();
+    values.forEach(item => { const key = String(item.row[plan.groupBy!] ?? "Unknown"); groups.set(key, (groups.get(key) || 0) + item.value); });
+    return { values: [...groups].sort((a, b) => a[1] - b[1]).slice(0, plan.limit || 5).map(([label, value]) => ({ label, value })), recordsUsed: values.length, method: "Lowest " + plan.field + " grouped by " + plan.groupBy };
+  }
   return { rows: values.map(item => item.row), recordsUsed: values.length, method: `Forecast input: ${plan.field}` };
 }
 
 export function validatePlan(plan: Plan, columns: string[]) {
-  const operations = ["sum", "average", "top_values", "forecast", "anomalies"];
+  const operations = ["sum", "average", "top_values", "bottom_values", "trend", "forecast", "anomalies"];
   const filters = [...(plan.filters || []), ...(plan.comparisonFilters || [])];
   if (!plan || !operations.includes(plan.operation) || !columns.includes(plan.field) || (plan.timeField && !columns.includes(plan.timeField)) || (plan.groupBy && !columns.includes(plan.groupBy)) || filters.some(filter => !columns.includes(filter.field))) throw new Error("The analysis plan uses a field or operation that is not approved for this dataset.");
-  if (plan.operation === "top_values" && !plan.groupBy) throw new Error("A grouped analysis needs a groupBy field.");
+  if ((plan.operation === "top_values" || plan.operation === "bottom_values") && !plan.groupBy) throw new Error("A grouped analysis needs a groupBy field.");
+  if (plan.operation === "trend" && !plan.timeField) throw new Error("A trend analysis needs a time field.");
 }
 
 export function executePlan(rows: Row[], plan: Plan) {
   const selected = filtered(rows, plan.filters);
+  if (plan.operation === "trend") {
+    const buckets = new Map<string, number>();
+    selected.forEach(row => {
+      const date = new Date(String(row[plan.timeField!] ?? ""));
+      const value = numeric(row[plan.field]);
+      if (Number.isNaN(date.getTime()) || value === null) return;
+      const period = String(date.getUTCFullYear()) + "-" + String(date.getUTCMonth() + 1).padStart(2, "0");
+      buckets.set(period, (buckets.get(period) || 0) + value);
+    });
+    const values = [...buckets].sort((a,b) => a[0].localeCompare(b[0])).map(([label,value]) => ({label,value}));
+    const first = values[0]?.value || 0, last = values.at(-1)?.value || 0;
+    const percentChange = first === 0 ? null : Number((((last-first)/Math.abs(first))*100).toFixed(1));
+    return { values, recordsUsed:selected.length, method:"Monthly trend of "+plan.field, trend:{periods:values.length,first,last,percentChange}, evidence:{recordsInput:rows.length,recordsMatched:selected.length,filters:plan.filters||[]} };
+  }
   if (plan.operation === "top_values" && isRateField(plan.field)) {
     const groups = new Map<string, { total:number; count:number }>();
     selected.forEach(row => {

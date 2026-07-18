@@ -15,11 +15,13 @@ function formatValue(value: unknown, field = "", method = "") {
 function executiveAnswer(output: any, field = "") {
   const method=String(output.method||"calculation from the uploaded data"), records=output.evidence?.recordsMatched||output.recordsUsed||0;
   if(output.forecast) { const total=Number.isFinite(Number(output.totalForecast))?output.totalForecast:output.forecast.reduce((sum:number,value:number)=>sum+Number(value||0),0); return "**Outlook:** Based on our available history, the projected total is **"+formatValue(total,field,method)+"**. \n\n- Method: "+method+"\n- Validation error: "+output.validation?.mapePercent+"% MAPE across "+output.validation?.holdoutPeriods+" held-out periods\n- Treat this as a directional estimate, not a guarantee."; }
+  if(output.trend) { const change=output.trend.percentChange===null?"not available":formatValue(output.trend.percentChange,"percent","average"); return "**Trend:** Our "+field+" moved from **"+formatValue(output.trend.first,field,method)+"** to **"+formatValue(output.trend.last,field,method)+"** across "+output.trend.periods+" observed periods.\n\n- Change: "+change+"\n- Evidence: "+records+" matched records\n- Method: "+method; }
   if(Array.isArray(output.values)) {
     const first=output.values[0];
     if(!first) return "No matching values were found. We checked "+records+" records using "+method+".";
     const label=first.label||"the leading record", value=formatValue(first.value,field,method);
-    return "**Key finding:** Our leading result is **"+label+"** at **"+value+"**.\n\n- Method: "+method+"\n- Evidence: "+records+" matched records\n- Review the chart for the full set of contributors.";
+    const lead=/lowest|bottom|weakest/i.test(method)?"lowest-performing":"leading";
+    return "**Key finding:** Our "+lead+" result is **"+label+"** at **"+value+"**.\n\n- Method: "+method+"\n- Evidence: "+records+" matched records\n- Review the chart for the full set of contributors.";
   }
   if(output.comparison) return "**Result:** "+formatValue(output.value,field,method)+"\n\n- Change from baseline: "+formatValue(output.comparison.percentChange,"percent","average")+"\n- Evidence: "+records+" matched records\n- Method: "+method;
   return "**Result:** "+formatValue(output.value,field,method)+"\n\n- Evidence: "+records+" matched records\n- Method: "+method;

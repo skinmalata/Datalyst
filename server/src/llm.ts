@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const filter = z.object({ field:z.string(), operator:z.enum(["equals","not_equals","contains","gt","gte","lt","lte"]), value:z.union([z.string(),z.number(),z.boolean()]) });
-export const llmPlan = z.object({ operation:z.enum(["sum","average","top_values","forecast","anomalies"]), field:z.string(), timeField:z.string().optional(), groupBy:z.string().optional(), limit:z.number().int().min(1).max(100).optional(), filters:z.array(filter).max(10).optional(), comparisonFilters:z.array(filter).min(1).max(10).optional(), explanation:z.string().max(500) });
+export const llmPlan = z.object({ operation:z.enum(["sum","average","top_values","bottom_values","trend","forecast","anomalies"]), field:z.string(), timeField:z.string().optional(), groupBy:z.string().optional(), limit:z.number().int().min(1).max(100).optional(), filters:z.array(filter).max(10).optional(), comparisonFilters:z.array(filter).min(1).max(10).optional(), explanation:z.string().max(500) });
 
 function fieldForQuestion(question:string, columns:string[]) {
   const lower=question.toLowerCase();
@@ -25,8 +25,9 @@ function deterministicPlan(question:string, columns:string[]) {
   const groupBy=dimensionForQuestion(question,columns,field), timeField=timeForQuestion(columns);
   if(/anomal|outlier|unusual|risk|investigate/.test(lower)) return llmPlan.parse({operation:"anomalies",field,limit:20,explanation:"Screen for statistically unusual values."});
   if(/forecast|expect next|outlook|predict/.test(lower)&&timeField) return llmPlan.parse({operation:"forecast",field,timeField,explanation:"Forecast from the available time history."});
-  if(/trend|over time|improving|declining|changed/.test(lower)&&timeField) return llmPlan.parse({operation:"forecast",field,timeField,explanation:"Use the time history to assess direction and produce a forecast."});
+  if(/trend|over time|improving|declining|changed/.test(lower)&&timeField) return llmPlan.parse({operation:"trend",field,timeField,explanation:"Aggregate the available history into a monthly trend."});
   if(/average|typical|normal/.test(lower)) return llmPlan.parse({operation:"average",field,explanation:"Calculate the average across valid records."});
+  if(groupBy&&/(bottom|lowest|weakest|underperforming|needs attention)/.test(lower)) return llmPlan.parse({operation:"bottom_values",field,groupBy,limit:5,explanation:"Rank the weakest business dimension."});
   if(groupBy&&/(top|leading|leader|driving|priority|strongest|highest|compare|across|contributes|matters|by )/.test(lower)) return llmPlan.parse({operation:"top_values",field,groupBy,limit:/top 10|10 /.test(lower)?10:5,explanation:"Rank the requested business dimension."});
   if(/total|overall|headline/.test(lower)) return llmPlan.parse({operation:"sum",field,explanation:"Calculate the total across valid records."});
   if(groupBy) return llmPlan.parse({operation:"top_values",field,groupBy,limit:5,explanation:"Rank the most relevant business dimension."});
