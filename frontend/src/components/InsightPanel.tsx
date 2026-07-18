@@ -1,9 +1,4 @@
-export type Insight = {
-  type: "recommendation" | "warning" | "opportunity" | "context";
-  title: string;
-  detail: string;
-  priority: "high" | "medium" | "low";
-};
+import type { Insight } from "@/store/useStore";
 
 const typeStyles: Record<Insight["type"], { border: string; badge: string; icon: string }> = {
   recommendation: { border: "border-l-primary", badge: "bg-primary/20 text-primary", icon: "→" },

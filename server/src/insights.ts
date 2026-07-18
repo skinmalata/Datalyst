@@ -33,19 +33,32 @@ function coefficientOfVariation(values: number[]) {
   return (standardDeviation(values) / Math.abs(mean)) * 100;
 }
 
-function giniCoefficient(values: number[]) {
-  const sorted = [...values].sort((a, b) => a - b);
-  const n = sorted.length;
-  if (n === 0) return 0;
-  const total = sorted.reduce((s, v) => s + v, 0);
-  if (total === 0) return 0;
-  let cumulative = 0;
-  let giniSum = 0;
-  sorted.forEach((value, index) => {
-    cumulative += value;
-    giniSum += (2 * (index + 1) - n - 1) * value;
+function reaggregate(rows: Row[], field: string, groupBy: string): { label: string; value: number }[] {
+  const groups = new Map<string, { total: number; count: number }>();
+  rows.forEach(row => {
+    const v = numeric(row[field]);
+    if (v === null) return;
+    const key = String(row[groupBy] ?? "Unknown");
+    const entry = groups.get(key) || { total: 0, count: 0 };
+    entry.total += v;
+    entry.count++;
+    groups.set(key, entry);
   });
-  return giniSum / (n * total);
+  return [...groups].map(([label, g]) => ({ label, value: g.total })).sort((a, b) => b.value - a.value);
+}
+
+function reaggregateAverages(rows: Row[], field: string, groupBy: string): { label: string; value: number }[] {
+  const groups = new Map<string, { total: number; count: number }>();
+  rows.forEach(row => {
+    const v = numeric(row[field]);
+    if (v === null) return;
+    const key = String(row[groupBy] ?? "Unknown");
+    const entry = groups.get(key) || { total: 0, count: 0 };
+    entry.total += v;
+    entry.count++;
+    groups.set(key, entry);
+  });
+  return [...groups].map(([label, g]) => ({ label, value: g.total / g.count })).sort((a, b) => b.value - a.value);
 }
 
 export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[] {
@@ -58,66 +71,81 @@ export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[
   const isForecast = !!result.forecast;
   const isAnomaly = /anomaly|outlier/i.test(method);
   const isComparison = !!result.comparison;
+  const isBottom = /lowest|bottom|weakest/i.test(method);
+  const rateField = isRateField(field);
 
   if (isGrouped) {
-    const values = result.values.map((v: any) => Number(v.value)).filter((v: number) => Number.isFinite(v));
-    const total = values.reduce((s: number, v: number) => s + v, 0);
-    if (total === 0) return generateFallbackInsights(plan, result);
+    const fullValues = rateField
+      ? reaggregateAverages(rows, field, groupBy)
+      : reaggregate(rows, field, groupBy);
 
-    const top3Total = values.slice(0, 3).reduce((s: number, v: number) => s + v, 0);
-    const concentration = (top3Total / total) * 100;
-    const med = median(values);
-    const gini = giniCoefficient(values);
+    if (fullValues.length >= 2) {
+      const allGroupValues = fullValues.map(v => v.value);
+      const total = allGroupValues.reduce((s, v) => s + v, 0);
 
-    if (concentration >= 70) {
-      insights.push({
-        type: "warning",
-        title: "High concentration risk",
-        detail: `The top 3 ${groupBy} account for ${concentration.toFixed(0)}% of total ${field}. Your performance is heavily dependent on a small number of areas. A disruption to any one of them would materially impact your overall results.`,
-        priority: "high",
-      });
-    } else if (concentration <= 40) {
-      insights.push({
-        type: "context",
-        title: "Well-diversified distribution",
-        detail: `The top 3 ${groupBy} account for only ${concentration.toFixed(0)}% of total ${field}, indicating a healthy spread of performance across your ${groupBy}.`,
-        priority: "low",
-      });
-    }
+      if (!rateField && total > 0) {
+        const top3Total = allGroupValues.slice(0, 3).reduce((s, v) => s + v, 0);
+        const concentration = (top3Total / total) * 100;
 
-    const topValue = values[0];
-    const ratio = med > 0 ? topValue / med : 0;
-    if (ratio >= 3) {
-      insights.push({
-        type: "opportunity",
-        title: "Significant leader gap",
-        detail: `The top ${groupBy} is ${ratio.toFixed(1)}x the median. This suggests best practices from the leader could be replicated in underperforming areas to lift overall ${field}.`,
-        priority: "high",
-      });
-    }
+        if (concentration >= 70) {
+          insights.push({
+            type: "warning",
+            title: "High concentration risk",
+            detail: `The top 3 ${groupBy} account for ${concentration.toFixed(0)}% of total ${field}. Your performance is heavily dependent on a small number of areas. A disruption to any one of them would materially impact your overall results.`,
+            priority: "high",
+          });
+        } else if (concentration <= 40) {
+          insights.push({
+            type: "context",
+            title: "Well-diversified distribution",
+            detail: `The top 3 ${groupBy} account for only ${concentration.toFixed(0)}% of total ${field}, indicating a healthy spread of performance across your ${groupBy}.`,
+            priority: "low",
+          });
+        }
+      }
 
-    if (values.length >= 5) {
-      const bottomValues = values.slice(-3);
-      const bottomAvg = bottomValues.reduce((s: number, v: number) => s + v, 0) / bottomValues.length;
-      const overallAvg = total / values.length;
-      if (overallAvg > 0 && bottomAvg < overallAvg * 0.3) {
+      const med = median(allGroupValues);
+      const sortedForRanking = isBottom ? [...allGroupValues].sort((a, b) => a - b) : allGroupValues;
+      const bestValue = sortedForRanking[sortedForRanking.length - 1] ?? 0;
+      const worstValue = sortedForRanking[0] ?? 0;
+      const ratio = med > 0 ? bestValue / med : 0;
+
+      if (ratio >= 3) {
         insights.push({
-          type: "recommendation",
-          title: "Underperforming areas need attention",
-          detail: `The bottom 3 ${groupBy} average ${isRateField(field) ? bottomAvg.toFixed(1) + "%" : bottomAvg.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${field}, which is less than 30% of the overall average. Investigate whether these areas can be improved or if resources should be reallocated.`,
+          type: "opportunity",
+          title: "Significant leader gap",
+          detail: `The top ${groupBy} is ${ratio.toFixed(1)}x the median. This suggests best practices from the leader could be replicated in underperforming areas to lift overall ${field}.`,
           priority: "high",
         });
       }
-    }
 
-    const cv = coefficientOfVariation(values);
-    if (cv > 50) {
-      insights.push({
-        type: "context",
-        title: "High variance across groups",
-        detail: `The coefficient of variation is ${cv.toFixed(0)}%, meaning ${groupBy} performance varies widely. This may indicate inconsistent execution, market differences, or data quality issues.`,
-        priority: "medium",
-      });
+      if (allGroupValues.length >= 5) {
+        const sortedAsc = [...allGroupValues].sort((a, b) => a - b);
+        const bottomThree = sortedAsc.slice(0, 3);
+        const bottomAvg = bottomThree.reduce((s, v) => s + v, 0) / bottomThree.length;
+        const overallAvg = rateField
+          ? allGroupValues.reduce((s, v) => s + v, 0) / allGroupValues.length
+          : total / allGroupValues.length;
+
+        if (overallAvg > 0 && bottomAvg < overallAvg * 0.3) {
+          insights.push({
+            type: "recommendation",
+            title: "Underperforming areas need attention",
+            detail: `The bottom 3 ${groupBy} average ${rateField ? bottomAvg.toFixed(1) + "%" : bottomAvg.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${field}, which is less than 30% of the overall average. Investigate whether these areas can be improved or if resources should be reallocated.`,
+            priority: "high",
+          });
+        }
+      }
+
+      const cv = coefficientOfVariation(allGroupValues);
+      if (cv > 50) {
+        insights.push({
+          type: "context",
+          title: "High variance across groups",
+          detail: `The coefficient of variation is ${cv.toFixed(0)}%, meaning ${groupBy} performance varies widely. This may indicate inconsistent execution, market differences, or data quality issues.`,
+          priority: "medium",
+        });
+      }
     }
   }
 
@@ -206,7 +234,7 @@ export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[
       insights.push({
         type: "recommendation",
         title: "Planning implication",
-        detail: `The projected total of ${isRateField(field) ? total.toFixed(1) + "%" : total.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${field} should be stress-tested against your targets. Consider scenario planning at -10% and +10% to prepare for variance.`,
+        detail: `The projected total of ${rateField ? total.toFixed(1) + "%" : total.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${field} should be stress-tested against your targets. Consider scenario planning at -10% and +10% to prepare for variance.`,
         priority: "medium",
       });
     }
@@ -253,7 +281,7 @@ export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[
       insights.push({
         type: pct > 0 ? "opportunity" : "warning",
         title: "Material performance shift",
-        detail: `The ${pct > 0 ? "improvement" : "decline"} of ${gap.toFixed(1)}% versus baseline is statistically significant. ${pct > 0 ? "This validates your current approach — consider doubling down." : "This requires immediate root cause analysis to prevent further erosion."}`,
+        detail: `The ${pct > 0 ? "improvement" : "decline"} of ${gap.toFixed(1)}% versus baseline is a notable change. ${pct > 0 ? "This validates your current approach — consider doubling down." : "This requires immediate root cause analysis to prevent further erosion."}`,
         priority: "high",
       });
     } else if (gap <= 3) {
