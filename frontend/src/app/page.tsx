@@ -47,12 +47,7 @@ const plans = [
   },
 ];
 
-const stats = [
-  { value: "2.4M+", label: "Queries answered" },
-  { value: "99.9%", label: "Uptime SLA" },
-  { value: "< 3s", label: "Average response" },
-  { value: "SOC 2", label: "Type II ready" },
-];
+
 
 export default function Home() {
   return (
@@ -95,15 +90,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* STATS BAR */}
-        <div className="mx-auto mt-16 grid max-w-3xl grid-cols-2 gap-6 rounded-2xl border border-border bg-surface p-8 md:grid-cols-4 lg:col-span-2">
-          {stats.map(s => (
-            <div key={s.label} className="text-center">
-              <div className="text-2xl font-bold text-primary">{s.value}</div>
-              <div className="mt-1 text-xs text-text-muted">{s.label}</div>
-            </div>
-          ))}
-        </div>
       </section>
 
       {/* HOW IT WORKS */}
