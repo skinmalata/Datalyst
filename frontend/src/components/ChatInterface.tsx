@@ -5,6 +5,7 @@ import { chartForResult } from "@/lib/result-visualization";
 import { useStore } from "@/store/useStore";
 import { QueryInput } from "./QueryInput";
 import { ChatMessage } from "./ChatMessage";
+import { DatasetReview } from "./DatasetReview";
 
 function formatValue(value: unknown, field = "", method = "") {
   const number = Number(value);
@@ -43,7 +44,7 @@ export function ChatInterface() {
       const plan = await api<any>("/api/analyses/plan", { method: "POST", body: JSON.stringify({ datasetId, question }) });
       const result = await api<any>("/api/analyses", { method: "POST", body: JSON.stringify({ datasetId, question, plan }) });
       const output = result.result, chart = chartForResult(output);
-      add({ id: crypto.randomUUID(), role: "assistant", content: executiveAnswer(output, plan.field), ...chart, insights: result.insights });
+      add({ id: crypto.randomUUID(), role: "assistant", content: executiveAnswer(output, plan.field) + "\n\n_Provenance: dataset version " + result.datasetVersion + "; fields and filters are listed in the method above._", ...chart, insights: result.insights });
     } catch (error) {
       add({ id: crypto.randomUUID(), role: "assistant", content: error instanceof Error ? error.message : "Analysis could not be completed." });
     } finally { setLoading(false); }
@@ -51,6 +52,7 @@ export function ChatInterface() {
   return <div className="mx-auto flex max-w-4xl flex-col gap-5">
     {preparation ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Analyst preparation complete</p><p className="mt-1 text-sm text-text-secondary">Prepared {preparation.outputRows} of {preparation.inputRows} rows across {preparation.columns} columns.</p><ul className="mt-2 list-inside list-disc text-sm text-text-secondary">{preparation.transformations.map(change => <li key={change}>{change}</li>)}</ul>{preparation.warnings.map(warning => <p className="mt-2 text-sm text-amber-300" key={warning}>Note: {warning}</p>)}</section> : null}
     {profile ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Data readiness: {profile.completeness}% complete</p><p className="mt-1 text-sm text-text-secondary">{profile.records} records · {profile.columns} columns · {profile.duplicateRows} duplicate rows found</p><p className="mt-2 text-sm text-text-secondary">Detected: {profile.fields.filter(field=>field.kind==="number").length} numeric measures, {profile.fields.filter(field=>field.kind==="date").length} date fields, and {profile.fields.filter(field=>field.kind==="category").length} business dimensions.</p>{profile.warnings.map(warning => <p className="mt-2 text-sm text-amber-300" key={warning}>Note: {warning}</p>)}</section> : null}
+    <DatasetReview rows={rows} profile={profile} />
     <div><p className="mb-1 text-sm font-semibold text-text-secondary">Recommended leadership questions</p><p className="mb-3 text-sm text-text-muted">Ten questions tailored to the measures and business dimensions in your uploaded data.</p><div className="grid gap-2 sm:grid-cols-2">{questions.map(({ question, description }) => <button key={question} onClick={() => ask(question)} className="rounded-lg border border-border bg-surface p-4 text-left"><b>{question}</b><span className="mt-1 block text-sm text-text-muted">{description}</span></button>)}</div></div>
     {messages.map((message) => <ChatMessage key={message.id} role={message.role} content={message.content} values={message.values} chartType={message.chartType} insights={message.insights} />)}
     {loading ? <p className="text-text-muted">Checking your data…</p> : null}

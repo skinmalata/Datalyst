@@ -68,6 +68,7 @@ export function executePlan(rows: Row[], plan: Plan) {
       buckets.set(period, (buckets.get(period) || 0) + value); observations++;
     });
     const values = [...buckets].sort((a,b) => a[0].localeCompare(b[0])).map(([label,value]) => ({label,value}));
+    if (values.length < 3) throw new Error("At least three complete time periods are needed for a trustworthy trend.");
     const first = values[0]?.value || 0, last = values.at(-1)?.value || 0;
     const percentChange = first === 0 ? null : Number((((last-first)/Math.abs(first))*100).toFixed(1));
     return { values, recordsUsed:values.length, method:"Monthly trend of "+plan.field, trend:{periods:values.length,first,last,percentChange,observations}, evidence:{recordsInput:rows.length,recordsMatched:observations,filters:plan.filters||[]} };
@@ -84,12 +85,19 @@ export function executePlan(rows: Row[], plan: Plan) {
   }
   if (plan.operation === "anomalies") {
     const values = selected.map((row, index) => ({ row, index, value: numeric(row[plan.field]) })).filter((item): item is { row: Row; index: number; value: number } => item.value !== null);
+    if (values.length < 8) throw new Error("At least eight valid observations are needed for anomaly detection.");
     const mean = values.reduce((total, item) => total + item.value, 0) / Math.max(values.length, 1);
     const deviation = Math.sqrt(values.reduce((total, item) => total + (item.value - mean) ** 2, 0) / Math.max(values.length, 1));
     const anomalies = values.filter(item => deviation > 0 && Math.abs((item.value - mean) / deviation) >= 2.5).sort((a, b) => Math.abs(b.value - mean) - Math.abs(a.value - mean)).slice(0, plan.limit || 20).map(item => ({ recordIndex: item.index, value: item.value, zScore: Number(((item.value - mean) / deviation).toFixed(2)), row: item.row }));
     return { values: anomalies, recordsUsed: values.length, method: `Z-score anomaly detection for ${plan.field}`, evidence: { recordsInput: rows.length, recordsMatched: selected.length, filters: plan.filters || [], threshold: 2.5 } };
   }
   const result = aggregate(selected, plan);
+  if (plan.operation === "forecast") {
+    const forecastRows = result.rows || [];
+    const dated = forecastRows.filter(row => !Number.isNaN(new Date(String(row[plan.timeField!] ?? "")).getTime()));
+    const periods = new Set(dated.map(row => { const date = new Date(String(row[plan.timeField!])); return `${date.getUTCFullYear()}-${date.getUTCMonth()}`; }));
+    if (dated.length < 8 || periods.size < 6) throw new Error("A forecast needs at least eight valid observations across six time periods.");
+  }
   const evidence = { recordsInput: rows.length, recordsMatched: selected.length, filters: plan.filters || [] };
   if (!plan.comparisonFilters?.length) return { ...result, evidence };
   const baseline = aggregate(filtered(rows, plan.comparisonFilters), plan);
