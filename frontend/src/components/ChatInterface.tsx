@@ -34,7 +34,7 @@ function executiveAnswer(output: any, field = "") {
 }
 
 export function ChatInterface() {
-  const { datasetId, rows, profile, messages, add, setLoading, loading } = useStore();
+  const { datasetId, rows, profile, preparation, messages, add, setLoading, loading } = useStore();
   const questions = generateSuggestedQueries(rows);
   const ask = async (question: string) => {
     add({ id: crypto.randomUUID(), role: "user", content: question });
@@ -49,6 +49,7 @@ export function ChatInterface() {
     } finally { setLoading(false); }
   };
   return <div className="mx-auto flex max-w-4xl flex-col gap-5">
+    {preparation ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Analyst preparation complete</p><p className="mt-1 text-sm text-text-secondary">Prepared {preparation.outputRows} of {preparation.inputRows} rows across {preparation.columns} columns.</p><ul className="mt-2 list-inside list-disc text-sm text-text-secondary">{preparation.transformations.map(change => <li key={change}>{change}</li>)}</ul></section> : null}
     {profile ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Data readiness: {profile.completeness}% complete</p><p className="mt-1 text-sm text-text-secondary">{profile.records} records · {profile.columns} columns · {profile.duplicateRows} duplicate rows found</p>{profile.warnings.map(warning => <p className="mt-2 text-sm text-amber-300" key={warning}>Note: {warning}</p>)}</section> : null}
     <div><p className="mb-1 text-sm font-semibold text-text-secondary">Recommended leadership questions</p><p className="mb-3 text-sm text-text-muted">Ten questions tailored to the measures and business dimensions in your uploaded data.</p><div className="grid gap-2 sm:grid-cols-2">{questions.map(({ question, description }) => <button key={question} onClick={() => ask(question)} className="rounded-lg border border-border bg-surface p-4 text-left"><b>{question}</b><span className="mt-1 block text-sm text-text-muted">{description}</span></button>)}</div></div>
     {messages.map((message) => <ChatMessage key={message.id} role={message.role} content={message.content} values={message.values} chartType={message.chartType} />)}
