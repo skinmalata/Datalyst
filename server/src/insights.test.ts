@@ -123,6 +123,88 @@ describe("generateInsights", () => {
     });
   });
 
+  describe("top-ranking leader gap", () => {
+    it("uses the highest value for top_values, not the lowest", () => {
+      const rows = [
+        row("A", 10), row("B", 20), row("C", 30),
+        row("D", 40), row("E", 300),
+      ];
+      const result = {
+        values: [
+          { label: "E", value: 300 },
+          { label: "D", value: 40 },
+          { label: "C", value: 30 },
+          { label: "B", value: 20 },
+          { label: "A", value: 10 },
+        ],
+        method: "Sum of revenue grouped by region",
+      };
+      const insights = generateInsights(rows, plan(), result);
+      const gap = insights.find(i => i.title === "Significant leader gap");
+      expect(gap).toBeDefined();
+      // E=300, median of [10,20,30,40,300] = 30 → ratio = 10.0x
+      expect(gap!.detail).toContain("10.0x");
+    });
+
+    it("does not report leader gap when values are close", () => {
+      const rows = [
+        row("A", 90), row("B", 95), row("C", 100),
+        row("D", 105), row("E", 110),
+      ];
+      const result = {
+        values: [
+          { label: "E", value: 110 },
+          { label: "D", value: 105 },
+          { label: "C", value: 100 },
+          { label: "B", value: 95 },
+          { label: "A", value: 90 },
+        ],
+        method: "Sum of revenue grouped by region",
+      };
+      const insights = generateInsights(rows, plan(), result);
+      const gap = insights.find(i => i.title === "Significant leader gap");
+      expect(gap).toBeUndefined();
+    });
+  });
+
+  describe("filter-aware re-aggregation", () => {
+    it("applies plan.filters when computing concentration", () => {
+      const rows = [
+        row("A", 100), row("A", 500),
+        row("B", 80), row("B", 400),
+        row("C", 60), row("C", 300),
+        row("D", 40), row("D", 200),
+        row("E", 20), row("E", 100),
+      ];
+      // Without filter: A=600, B=480, C=360, D=240, E=120 → total=1800, top3=1440=80% → concentration warning
+      // With filter to Q1 (first row only): A=100, B=80, C=60, D=40, E=20 → total=300, top3=240=80% → still warns
+      // But if we filter to exclude A's second entry and only keep A's first:
+      // Filter: revenue < 200 → A=100, B=80, C=60, D=40, E=20 → top3=240/300=80%
+      // Better test: filter to only row with revenue > 100
+      // revenue > 100: A=500, B=400, C=300, D=200, E=100(no) → A=500, B=400, C=300, D=200 → total=1400, top3=1200=86%
+      const filteredRows = rows.filter(r => Number(r.revenue) > 100);
+      const result = {
+        values: [
+          { label: "A", value: 500 },
+          { label: "B", value: 400 },
+          { label: "C", value: 300 },
+          { label: "D", value: 200 },
+        ],
+        method: "Sum of revenue grouped by region",
+      };
+      // Without filter, re-aggregation sees all rows → different totals
+      const unfilteredInsights = generateInsights(rows, plan(), result);
+      const filteredInsights = generateInsights(rows, plan({ filters: [{ field: "revenue", operator: "gt", value: 100 }] }), result);
+      // Both should detect concentration, but the percentages differ
+      const unfilteredConc = unfilteredInsights.find(i => i.title === "High concentration risk");
+      const filteredConc = filteredInsights.find(i => i.title === "High concentration risk");
+      expect(unfilteredConc).toBeDefined();
+      expect(filteredConc).toBeDefined();
+      // The details should differ because the underlying totals are different
+      expect(unfilteredConc!.detail).not.toBe(filteredConc!.detail);
+    });
+  });
+
   describe("rate fields", () => {
     it("skips concentration check for rate fields", () => {
       const rows = [

@@ -16,6 +16,24 @@ function numeric(value: unknown) {
 
 function isRateField(field: string) { return /(rate|margin|percent|percentage)/i.test(field); }
 
+function matchesRow(row: Row, filter: { field: string; operator: string; value: string | number | boolean }) {
+  const source = row[filter.field];
+  const sourceNumber = numeric(source), filterNumber = numeric(filter.value);
+  if (filter.operator === "contains") return String(source ?? "").toLowerCase().includes(String(filter.value).toLowerCase());
+  if (filter.operator === "equals") return String(source ?? "").toLowerCase() === String(filter.value).toLowerCase();
+  if (filter.operator === "not_equals") return String(source ?? "").toLowerCase() !== String(filter.value).toLowerCase();
+  if (sourceNumber === null || filterNumber === null) return false;
+  if (filter.operator === "gt") return sourceNumber > filterNumber;
+  if (filter.operator === "gte") return sourceNumber >= filterNumber;
+  if (filter.operator === "lt") return sourceNumber < filterNumber;
+  return sourceNumber <= filterNumber;
+}
+
+function filtered(rows: Row[], filters: { field: string; operator: string; value: string | number | boolean }[] = []) {
+  if (!filters.length) return rows;
+  return rows.filter(row => filters.every(f => matchesRow(row, f)));
+}
+
 function median(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -75,9 +93,10 @@ export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[
   const rateField = isRateField(field);
 
   if (isGrouped) {
+    const selected = filtered(rows, plan.filters);
     const fullValues = rateField
-      ? reaggregateAverages(rows, field, groupBy)
-      : reaggregate(rows, field, groupBy);
+      ? reaggregateAverages(selected, field, groupBy)
+      : reaggregate(selected, field, groupBy);
 
     if (fullValues.length >= 2) {
       const allGroupValues = fullValues.map(v => v.value);
@@ -106,7 +125,7 @@ export function generateInsights(rows: Row[], plan: Plan, result: any): Insight[
 
       const med = median(allGroupValues);
       const sortedForRanking = isBottom ? [...allGroupValues].sort((a, b) => a - b) : allGroupValues;
-      const bestValue = sortedForRanking[sortedForRanking.length - 1] ?? 0;
+      const bestValue = isBottom ? (sortedForRanking[sortedForRanking.length - 1] ?? 0) : (sortedForRanking[0] ?? 0);
       const worstValue = sortedForRanking[0] ?? 0;
       const ratio = med > 0 ? bestValue / med : 0;
 
