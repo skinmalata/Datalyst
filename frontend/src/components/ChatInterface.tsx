@@ -9,6 +9,7 @@ import { DatasetReview } from "./DatasetReview";
 import { AnalysisFilter, type ManualFilter } from "./AnalysisFilter";
 import { useState } from "react";
 import { MetricGovernance } from "./MetricGovernance";
+import { DatasetOnboardingReport } from "./DatasetOnboardingReport";
 
 function formatValue(value: unknown, field = "", method = "") {
   const number = Number(value);
@@ -58,6 +59,7 @@ export function ChatInterface() {
   return <div className="mx-auto flex max-w-4xl flex-col gap-5">
     {preparation ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Analyst preparation complete</p><p className="mt-1 text-sm text-text-secondary">Prepared {preparation.outputRows} of {preparation.inputRows} rows across {preparation.columns} columns.</p><ul className="mt-2 list-inside list-disc text-sm text-text-secondary">{preparation.transformations.map(change => <li key={change}>{change}</li>)}</ul>{preparation.warnings.map(warning => <p className="mt-2 text-sm text-amber-300" key={warning}>Note: {warning}</p>)}</section> : null}
     {profile ? <section className="rounded-xl border border-border bg-surface p-4"><p className="font-semibold">Data readiness: {profile.completeness}% complete</p><p className="mt-1 text-sm text-text-secondary">{profile.records} records · {profile.columns} columns · {profile.duplicateRows} duplicate rows found</p><p className="mt-2 text-sm text-text-secondary">Detected: {profile.fields.filter(field=>field.kind==="number").length} numeric measures, {profile.fields.filter(field=>field.kind==="date").length} date fields, and {profile.fields.filter(field=>field.kind==="category").length} business dimensions.</p>{profile.warnings.map(warning => <p className="mt-2 text-sm text-amber-300" key={warning}>Note: {warning}</p>)}</section> : null}
+    <DatasetOnboardingReport rows={rows} profile={profile} onAsk={ask} />
     <DatasetReview rows={rows} profile={profile} />
     <AnalysisFilter rows={rows} value={manualFilter} onChange={setManualFilter} />
     <MetricGovernance columns={Object.keys(rows[0] || {})} />
