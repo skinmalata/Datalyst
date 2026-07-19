@@ -38,8 +38,12 @@ function parsePct(s: string): number {
   return parseFloat(s.replace("%", "")) || 0;
 }
 
-function tableHasRevenue(tbl: Table): boolean {
-  return tbl.headers.some(h => /revenue|total|amount|sales/i.test(h));
+function isMeasureHeader(header: string): boolean {
+  return /revenue|total|amount|sales|value|views?|visits?|sessions?|events?|count|units?|orders?/i.test(header);
+}
+
+function tableHasMeasure(tbl: Table): boolean {
+  return tbl.headers.some(isMeasureHeader);
 }
 
 function tableIsMonthly(tbl: Table): boolean {
@@ -52,7 +56,7 @@ function tableIsShare(tbl: Table): boolean {
 
 function tableToBarData(tbl: Table): { label: string; value: number }[] {
   const labelIdx = 0;
-  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
+  const valueIdx = tbl.headers.findIndex(isMeasureHeader);
   if (valueIdx === -1) return [];
   return tbl.rows.map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
 }
@@ -64,7 +68,7 @@ function tableToLineData(tbl: Table): { label: string; value: number }[] {
 function tableToDonutData(tbl: Table): { label: string; value: number }[] {
   const labelIdx = 0;
   const shareIdx = tbl.headers.findIndex(h => /share/i.test(h));
-  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
+  const valueIdx = tbl.headers.findIndex(isMeasureHeader);
   if (shareIdx !== -1) {
     return tbl.rows.slice(0, 8).map(r => ({ label: r[labelIdx], value: parsePct(r[shareIdx]) })).filter(d => d.value > 0);
   }
@@ -205,6 +209,73 @@ function downloadReportHtml(report: Report, rowCount: number, colCount: number) 
 
 type Props = { open: boolean; onClose: () => void; filter?: { field: string; value: string } };
 
+function ExecutiveInfographic({ report, rowCount, fieldCount, breakdown }: {
+  report: Report;
+  rowCount: number;
+  fieldCount: number;
+  breakdown?: { title: string; data: { label: string; value: number }[] };
+}) {
+  const headline = report.sections.find(section => section.title === "Executive Summary" || section.type === "finding")?.content;
+  const actions = report.recommendations.slice(0, 3);
+  const risks = report.warnings.length;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/15 via-surface to-surface">
+      <div className="border-b border-primary/20 px-5 py-4 sm:flex sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold tracking-widest text-primary">EXECUTIVE SNAPSHOT</p>
+          <p className="mt-1 text-sm text-text-secondary">The most important signals and next actions from this dataset.</p>
+        </div>
+        <p className="mt-2 font-mono text-[11px] text-text-muted sm:mt-0">DATA-LED • READY TO REVIEW</p>
+      </div>
+
+      <div className="grid gap-px bg-border md:grid-cols-3">
+        <div className="bg-surface px-5 py-4">
+          <p className="text-[10px] font-bold tracking-wider text-text-muted">DATA COVERAGE</p>
+          <p className="mt-2 text-2xl font-bold text-white">{rowCount.toLocaleString()}</p>
+          <p className="mt-1 text-xs text-text-secondary">records across {fieldCount} fields</p>
+        </div>
+        <div className="bg-surface px-5 py-4">
+          <p className="text-[10px] font-bold tracking-wider text-text-muted">PRIORITY ACTIONS</p>
+          <p className="mt-2 text-2xl font-bold text-green-400">{actions.length}</p>
+          <p className="mt-1 text-xs text-text-secondary">specific actions recommended</p>
+        </div>
+        <div className="bg-surface px-5 py-4">
+          <p className="text-[10px] font-bold tracking-wider text-text-muted">RISKS TO CHECK</p>
+          <p className={`mt-2 text-2xl font-bold ${risks > 0 ? "text-amber-300" : "text-green-400"}`}>{risks}</p>
+          <p className="mt-1 text-xs text-text-secondary">{risks > 0 ? "items need validation" : "no data-quality risks flagged"}</p>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <p className="mb-2 text-[10px] font-bold tracking-wider text-primary">WHAT THIS MEANS</p>
+          <p className="text-base font-medium leading-relaxed text-white">{headline || report.summary}</p>
+          {actions.length > 0 && (
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {actions.map((action, index) => (
+                <div key={action} className="rounded-xl border border-border bg-background/50 p-3">
+                  <p className="text-[10px] font-bold text-green-400">NEXT {index + 1}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-text-secondary">{action}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="lg:col-span-2">
+          {breakdown && breakdown.data.length >= 2 ? (
+            <ReportHorizontalBar data={breakdown.data.slice(0, 5)} title={`TOP DRIVERS · ${breakdown.title}`} />
+          ) : (
+            <div className="flex h-full min-h-48 items-center rounded-xl border border-dashed border-border bg-background/30 p-5 text-sm leading-relaxed text-text-secondary">
+              Add a category, region, product, or channel field to unlock a visual breakdown of the strongest drivers.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function ReportViewer({ open, onClose, filter }: Props) {
   const { datasetId, rows } = useStore();
   const [report, setReport] = useState<Report | null>(null);
@@ -256,7 +327,7 @@ export function ReportViewer({ open, onClose, filter }: Props) {
         const d = tableToLineData(tbl);
         if (d.length >= 2) { line.push({ title: tbl.title, data: d }); return; }
       }
-      if (tableIsShare(tbl) || tableHasRevenue(tbl)) {
+      if (tableIsShare(tbl) || tableHasMeasure(tbl)) {
         const d = tableToBarData(tbl);
         if (d.length >= 2) {
           if (d.length <= 6) { donut.push({ title: tbl.title.replace("Revenue by", "Share:"), data: tableToDonutData(tbl) }); }
@@ -320,6 +391,13 @@ export function ReportViewer({ open, onClose, filter }: Props) {
                 </div>
               </div>
             )}
+
+            <ExecutiveInfographic
+              report={report}
+              rowCount={rows.length}
+              fieldCount={Object.keys(rows[0] || {}).length}
+              breakdown={charts.bar[0]}
+            />
 
             {/* ── Warnings ── */}
             {report.warnings.length > 0 && (

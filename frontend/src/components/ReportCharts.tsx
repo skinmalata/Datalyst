@@ -18,7 +18,7 @@ const tooltipStyle = {
 };
 
 // ── Bar Chart ─────────────────────────────────────────────────────────────
-export function ReportBarChart({ data, title, color }: { data: ChartData[]; title?: string; color?: string }) {
+export function ReportBarChart({ data, title, color, valueLabel = "Value" }: { data: ChartData[]; title?: string; color?: string; valueLabel?: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       {title && <p className="mb-3 text-xs font-bold tracking-wider text-text-muted">{title}</p>}
@@ -26,7 +26,7 @@ export function ReportBarChart({ data, title, color }: { data: ChartData[]; titl
         <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
           <XAxis dataKey="label" stroke="#c2cfe0" tick={{ fontSize: 11 }} interval={0} angle={data.length > 6 ? -35 : 0} textAnchor={data.length > 6 ? "end" : "middle"} height={data.length > 6 ? 60 : 30} />
           <YAxis stroke="#c2cfe0" tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => ["$" + v.toLocaleString(), "Revenue"]} />
+          <Tooltip {...tooltipStyle} formatter={(v: number) => [v.toLocaleString(), valueLabel]} />
           <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={color || COLORS[0]}>
             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Bar>
@@ -37,7 +37,7 @@ export function ReportBarChart({ data, title, color }: { data: ChartData[]; titl
 }
 
 // ── Horizontal Bar Chart ──────────────────────────────────────────────────
-export function ReportHorizontalBar({ data, title }: { data: ChartData[]; title?: string }) {
+export function ReportHorizontalBar({ data, title, valueLabel = "Value" }: { data: ChartData[]; title?: string; valueLabel?: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       {title && <p className="mb-3 text-xs font-bold tracking-wider text-text-muted">{title}</p>}
@@ -45,7 +45,7 @@ export function ReportHorizontalBar({ data, title }: { data: ChartData[]; title?
         <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
           <XAxis type="number" stroke="#c2cfe0" tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v} />
           <YAxis type="category" dataKey="label" stroke="#c2cfe0" tick={{ fontSize: 11 }} width={120} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => ["$" + v.toLocaleString(), "Revenue"]} />
+          <Tooltip {...tooltipStyle} formatter={(v: number) => [v.toLocaleString(), valueLabel]} />
           <Bar dataKey="value" radius={[0, 4, 4, 0]}>
             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
           </Bar>
@@ -56,7 +56,7 @@ export function ReportHorizontalBar({ data, title }: { data: ChartData[]; title?
 }
 
 // ── Line Chart (trend) ────────────────────────────────────────────────────
-export function ReportLineChart({ data, title, color }: { data: ChartData[]; title?: string; color?: string }) {
+export function ReportLineChart({ data, title, color, valueLabel = "Value" }: { data: ChartData[]; title?: string; color?: string; valueLabel?: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
       {title && <p className="mb-3 text-xs font-bold tracking-wider text-text-muted">{title}</p>}
@@ -70,7 +70,7 @@ export function ReportLineChart({ data, title, color }: { data: ChartData[]; tit
           </defs>
           <XAxis dataKey="label" stroke="#c2cfe0" tick={{ fontSize: 11 }} />
           <YAxis stroke="#c2cfe0" tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v} />
-          <Tooltip {...tooltipStyle} formatter={(v: number) => ["$" + v.toLocaleString(), "Revenue"]} />
+          <Tooltip {...tooltipStyle} formatter={(v: number) => [v.toLocaleString(), valueLabel]} />
           <Area type="monotone" dataKey="value" stroke={color || COLORS[0]} fill="url(#areaGrad)" strokeWidth={2.5} dot={{ fill: color || COLORS[0], r: 3 }} activeDot={{ r: 5, stroke: "#fff", strokeWidth: 2 }} />
         </AreaChart>
       </ResponsiveContainer>
@@ -79,7 +79,7 @@ export function ReportLineChart({ data, title, color }: { data: ChartData[]; tit
 }
 
 // ── Donut / Pie Chart ─────────────────────────────────────────────────────
-export function ReportDonut({ data, title, innerLabel }: { data: ChartData[]; title?: string; innerLabel?: string }) {
+export function ReportDonut({ data, title, innerLabel, valueLabel = "Value" }: { data: ChartData[]; title?: string; innerLabel?: string; valueLabel?: string }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
@@ -90,7 +90,7 @@ export function ReportDonut({ data, title, innerLabel }: { data: ChartData[]; ti
             <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2} strokeWidth={0}>
               {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Tooltip {...tooltipStyle} formatter={(v: number) => ["$" + v.toLocaleString()]} />
+            <Tooltip {...tooltipStyle} formatter={(v: number) => [v.toLocaleString(), valueLabel]} />
           </PieChart>
         </ResponsiveContainer>
         <div className="flex-1 space-y-2">
