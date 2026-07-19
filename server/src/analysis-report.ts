@@ -145,7 +145,7 @@ function detectDatasetType(columns: string[], rows: Row[]): DatasetType {
   }
 
   const ecommerceHits = countHits([/order|revenue|sales|cart|checkout|purchase|discount|return|shipping|invoice|customer.?type|payment/i]);
-  const analyticsHits = countHits([/page.?view|session|bounce|click|impression|visit|duration|traffic|source|medium|campaign|conversion.?rate|exit|entrance/i]);
+  const analyticsHits = countHits([/page.?view|views?|session|bounce|click|impression|visit|duration|traffic|source|medium|campaign|conversion.?rate|exit|entrance/i]);
   const financialHits = countHits([/balance|debit|credit|account|ledger|expense|profit|loss|equity|liability|asset|tax|interest.?rate|dividend/i]);
   const hrHits = countHits([/employee|salary|department|hire.?date|termination|performance|headcount|attrition|tenure|payroll|bonus|benefit/i]);
 
@@ -159,15 +159,7 @@ function detectDatasetType(columns: string[], rows: Row[]): DatasetType {
   const sorted = types.sort((a, b) => b[1] - a[1]);
   if (sorted[0][1] >= 2) return sorted[0][0];
 
-  if (analyticsHits >= 1 && rows.length > 0) {
-    const sample = rows[0];
-    for (const c of columns) {
-      const v = sample[c];
-      if (typeof v === "number" && v >= 0 && v < 1 && String(c).toLowerCase().match(/rate|ratio|bounce|conversion/)) {
-        return "analytics";
-      }
-    }
-  }
+  if (analyticsHits >= 1) return "analytics";
 
   return "general";
 }
@@ -225,7 +217,7 @@ function buildProfile(type: DatasetType, metricField: string): Profile {
 export function generateAnalysisReport(rows: Row[], columns: string[]): AnalysisReport {
   const datasetType = detectDatasetType(columns, rows);
 
-  const metric = find(columns, [/total.?price|revenue|sales|amount|value|balance|expense|salary|payroll/i])
+  const metric = find(columns, [/total.?price|revenue|sales|amount|value|views?|visits?|sessions?|events?|balance|expense|salary|payroll/i])
     || columns.find(c => rows.some(r => num(r[c]) !== null));
   const dateField = find(columns, [/date|order.?date|month|period|timestamp/i]);
   const regionField = find(columns, [/region|country|market|territory|area|zone/i]);
@@ -258,6 +250,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   const total = values.reduce((s, v) => s + v, 0);
   const avg = values.length ? total / values.length : 0;
   const med = median(values);
+  const zeroCount = values.filter(value => value === 0).length;
 
   const metricLabel = prof.isMonetary ? "Total " + metric : "Total " + metric;
   const avgLabel = prof.isMonetary ? "Avg " + metric : "Mean " + metric;
@@ -291,6 +284,11 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     content: summarySentence,
     type: "text",
   });
+  if (datasetType === "analytics" && zeroCount) {
+    const zeroShare = zeroCount / values.length;
+    sections.push({ title: "Data quality and distribution", content: `**${pct(zeroShare)}** of records have zero ${metric}. This makes the mean (${prof.fmt(avg)}) a less representative benchmark than the median (${prof.fmt(med)}). Confirm whether zeros mean no activity, missing tracking, or intentionally included inactive records.`, type: "warning" });
+    if (zeroShare >= 0.5) warnings.push(`More than half of records have zero ${metric}. Segment zero-activity records before using averages to assess performance.`);
+  }
 
   // ── Regional / Dimension Analysis ──
   const groupDimension = regionField || productField;
@@ -671,12 +669,10 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     const upper = mean + 2 * sd;
     const anomalies = values.filter(v => v > upper);
     if (anomalies.length > 0) {
-      sections.push({
-        title: "Anomaly Detection",
-        content: `${anomalies.length} unusual ${prof.recordLabel.toLowerCase()} detected (>${prof.fmt(upper)}). These may indicate outliers, data entry errors, or exceptional cases worth investigating.`,
-        type: "warning",
-      });
-      recommendations.push(`Review the ${anomalies.length} outlier${anomalies.length === 1 ? "" : "s"} to determine if they represent genuine cases or data errors.`);
+      const title = datasetType === "analytics" ? "High-activity records" : "Anomaly Detection";
+      const content = datasetType === "analytics" ? `${anomalies.length} record${anomalies.length === 1 ? "" : "s"} exceeded ${prof.fmt(upper)} ${metric}. These are high-activity records, not automatically errors; inspect their source, page, campaign, or time period before acting.` : `${anomalies.length} unusual ${prof.recordLabel.toLowerCase()} detected (>${prof.fmt(upper)}). Validate whether they are data errors or exceptional cases.`;
+      sections.push({ title, content, type: "warning" });
+      recommendations.push(datasetType === "analytics" ? `Inspect the ${anomalies.length} high-activity record${anomalies.length === 1 ? "" : "s"} with their source and date context before treating them as a growth signal.` : `Review the ${anomalies.length} outlier${anomalies.length === 1 ? "" : "s"} to determine if they represent genuine cases or data errors.`);
     }
   }
 
@@ -720,11 +716,12 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
   // ── Dataset Type Recommendations ──
   if (datasetType === "analytics") {
-    if (!recommendations.length) {
-      recommendations.push("Segment traffic by source/medium to identify highest-converting acquisition channels.");
-    }
-    recommendations.push("Correlate page views with conversion events to find the pages that drive the most value.");
-    recommendations.push("Track bounce rate and session duration alongside page views to assess engagement quality.");
+    const sourceField = find(columns, [/source|medium|channel|campaign/i]);
+    const conversionField = find(columns, [/conversion|goal|signup|purchase/i]);
+    if (sourceField) recommendations.push(`Compare ${metric} by ${sourceField} to identify the channels driving meaningful activity.`);
+    else recommendations.push(`Add a source, channel, page, or campaign field to explain what drives ${metric}.`);
+    if (conversionField) recommendations.push(`Compare ${metric} with ${conversionField} to distinguish high traffic from high-value activity.`);
+    else recommendations.push("Add a conversion or outcome field before treating views as business impact.");
   } else if (datasetType === "ecommerce") {
     if (!recommendations.length) {
       recommendations.push("Upload a dataset with region, product, and date fields for richer analysis.");

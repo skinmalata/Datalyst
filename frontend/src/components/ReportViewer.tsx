@@ -203,9 +203,9 @@ function downloadReportHtml(report: Report, rowCount: number, colCount: number) 
   URL.revokeObjectURL(url);
 }
 
-type Props = { open: boolean; onClose: () => void };
+type Props = { open: boolean; onClose: () => void; filter?: { field: string; value: string } };
 
-export function ReportViewer({ open, onClose }: Props) {
+export function ReportViewer({ open, onClose, filter }: Props) {
   const { datasetId, rows } = useStore();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
@@ -228,7 +228,8 @@ export function ReportViewer({ open, onClose }: Props) {
     setError(null);
     setReport(null);
     try {
-      const data = await api<Report>(`/api/datasets/${datasetId}/report`);
+      const suffix = filter ? `?filterField=${encodeURIComponent(filter.field)}&filterValue=${encodeURIComponent(filter.value)}` : "";
+      const data = await api<Report>(`/api/datasets/${datasetId}/report${suffix}`);
       setReport(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Report generation failed. Please try again.");

@@ -32,7 +32,8 @@ export function AnalysisWizard({ onComplete }: Props) {
   };
 
   const runAnalysis = () => {
-    close(question.trim() || undefined);
+    const objectiveQuestion = objective === "Investigate an issue" ? "Where are we seeing unusual values?" : objective === "Compare segments" ? "Which business area is driving our performance?" : objective === "Forecast future values" ? "What should we expect next?" : undefined;
+    close(question.trim() || objectiveQuestion);
   };
 
   const next = () => {

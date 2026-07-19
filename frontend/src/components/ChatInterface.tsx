@@ -91,7 +91,7 @@ export function ChatInterface() {
         <QueryInput disabled={!datasetId || loading} onSubmit={ask} />
       </div>
     </div>
-    {showWizard && <AnalysisWizard onComplete={(question) => { setShowWizard(false); setShowReport(true); if (question) ask(question); }} />}
-    {showReport && <ReportViewer open={showReport} onClose={() => setShowReport(false)} />}
+    {showWizard && <AnalysisWizard onComplete={(question) => { setShowWizard(false); if (question) ask(question); else setShowReport(true); }} />}
+    {showReport && <ReportViewer open={showReport} onClose={() => setShowReport(false)} filter={manualFilter} />}
   </div>;
 }
