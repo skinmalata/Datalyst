@@ -1,3 +1,5 @@
+import * as XLSX from "xlsx";
+
 function parseDelimitedLine(line: string, delimiter: string) {
   const cells: string[] = [], current: string[] = [];
   let quoted = false;
@@ -38,4 +40,18 @@ export function parseDataFile(text: string, name: string): Record<string, unknow
   }
   if (!best.length) throw new Error("No usable data rows were found. Ensure the file has a header row and matching columns.");
   return best;
+}
+
+export async function parseUploadedFile(file: File): Promise<Record<string, unknown>[]> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    let workbook: XLSX.WorkBook;
+    try { workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true }); } catch { throw new Error("This Excel file could not be read. Try saving it as .xlsx and upload it again."); }
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new Error("This Excel file has no worksheets.");
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: "", raw: false });
+    if (!rows.length) throw new Error("The first Excel worksheet has no usable data rows.");
+    return rows;
+  }
+  return parseDataFile(await file.text(), file.name);
 }
