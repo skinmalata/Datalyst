@@ -1,1 +1,27 @@
-const originalEnterpriseAnalyze=window.enterpriseAnalyze;window.enterpriseAnalyze=function(query){const forecast=/(forecast|predict|projection|next year|next quarter)/i.test(query);originalEnterpriseAnalyze(query);setTimeout(()=>{if(forecast){const f=getForecastData();window.updateAssurance({method:'Linear trend forecast',note:'Monthly aggregation + 12 projected periods',confidence:f?`${f.values.length} observed periods; ${f.values.length>=6?'medium':'directional'} confidence`:'Revenue field not available'})}else window.updateAssurance({method:'Descriptive analysis',note:'Calculated directly from the current source data',confidence:'Verified calculation'})},20)};
+const originalEnterpriseAnalyze = window.enterpriseAnalyze;
+
+window.enterpriseAnalyze = function (query) {
+  const forecast = /(forecast|predict|projection|next year|next quarter)/i.test(query);
+
+  originalEnterpriseAnalyze(query);
+
+  setTimeout(() => {
+    if (forecast) {
+      const f = getForecastData();
+
+      window.updateAssurance({
+        method: 'Linear trend forecast',
+        note: 'Monthly aggregation + 12 projected periods',
+        confidence: f
+          ? `${f.values.length} observed periods; ${f.values.length >= 6 ? 'medium' : 'directional'} confidence`
+          : 'Revenue field not available',
+      });
+    } else {
+      window.updateAssurance({
+        method: 'Descriptive analysis',
+        note: 'Calculated directly from the current source data',
+        confidence: 'Verified calculation',
+      });
+    }
+  }, 20);
+};

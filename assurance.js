@@ -1,1 +1,34 @@
-window.updateAssurance=function({method='Descriptive analysis',note='Calculated directly from source data',confidence='Verified calculation'}={}){const count=rows.length,cols=rows[0]?Object.keys(rows[0]).length:0;let cells=count*Math.max(cols,1),filled=0;rows.forEach(r=>Object.values(r).forEach(v=>{if(v!==null&&v!==undefined&&String(v).trim()!=='')filled++}));const quality=cells?Math.round(filled/cells*100):0;document.querySelector('#qualityScore').textContent=quality+'% complete';document.querySelector('#qualityNote').textContent=quality>=95?'No material gaps detected in loaded fields.':'Review missing values before relying on results.';document.querySelector('#evidenceBase').textContent=count.toLocaleString()+' records';document.querySelector('#evidenceNote').textContent=cols+' fields evaluated from '+file;document.querySelector('#methodName').textContent=method;document.querySelector('#methodNote').textContent=note;document.querySelector('#calculationNotes').textContent=`Source: ${file}. Evidence base: ${count.toLocaleString()} records across ${cols} fields. ${confidence}. Results are decision support and should be reviewed alongside business context, data lineage, and material assumptions.`};window.updateAssurance();
+window.updateAssurance = function({
+  method = 'Descriptive analysis',
+  note = 'Calculated directly from source data',
+  confidence = 'Verified calculation'
+} = {}) {
+  const count = rows.length;
+  const cols = rows[0] ? Object.keys(rows[0]).length : 0;
+  let cells = count * Math.max(cols, 1);
+  let filled = 0;
+
+  rows.forEach(r => {
+    Object.values(r).forEach(v => {
+      if (v !== null && v !== undefined && String(v).trim() !== '') {
+        filled++;
+      }
+    });
+  });
+
+  const quality = cells ? Math.round(filled / cells * 100) : 0;
+
+  document.querySelector('#qualityScore').textContent = quality + '% complete';
+  document.querySelector('#qualityNote').textContent =
+    quality >= 95
+      ? 'No material gaps detected in loaded fields.'
+      : 'Review missing values before relying on results.';
+  document.querySelector('#evidenceBase').textContent = count.toLocaleString() + ' records';
+  document.querySelector('#evidenceNote').textContent = cols + ' fields evaluated from ' + file;
+  document.querySelector('#methodName').textContent = method;
+  document.querySelector('#methodNote').textContent = note;
+  document.querySelector('#calculationNotes').textContent =
+    `Source: ${file}. Evidence base: ${count.toLocaleString()} records across ${cols} fields. ${confidence}. Results are decision support and should be reviewed alongside business context, data lineage, and material assumptions.`;
+};
+
+window.updateAssurance();

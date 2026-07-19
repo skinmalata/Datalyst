@@ -2,10 +2,10 @@
 .env.*
 !.env.example
 uploads/
-node_modules/
-frontend/.next/
-server/node_modules/
+**/node_modules/
+**/.next/
 server/dist/
-__pycache__/
+**/__pycache__/
 *.py[cod]
 .DS_Store
+*.log

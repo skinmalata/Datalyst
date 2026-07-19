@@ -1,8 +1,8 @@
-# TrueAnalyzer demo guide
+# Datalyst demo guide
 
 For the corrected, step-by-step remote deployment guide, read [REMOTE_DEMO_DEPLOYMENT.md](REMOTE_DEMO_DEPLOYMENT.md).
 
-TrueAnalyzer is a data-analysis demo with a browser experience in the project root, a Node API in `server/`, and a Python forecasting service in `analytics-service/`.
+Datalyst is a data-analysis demo with a browser experience in the project root, a Node API in `server/`, and a Python forecasting service in `analytics-service/`.
 
 The browser demo now produces data-derived trends, group comparisons, IQR outlier screening, data-quality evidence, and charts from an uploaded dataset. The API adds governed analysis plans, auditable dataset records, role checks, and validated forecasting.
 
@@ -15,7 +15,7 @@ The browser demo now produces data-derived trends, group comparisons, IQR outlie
 - Group comparisons (for example region, category, or product)
 - Time-series trends from a date field
 - IQR-based potential-outlier screening
-- Forecasts with a 1–3 period holdout, MAE/MAPE, and seasonal modeling when at least two complete cycles are available
+- Forecasts use linear trend regression with a 1–3 period holdout validation and MAE/MAPE error reporting. Both the browser and backend use the same method for consistent results.
 - Backend analysis plans with approved fields, filters, comparisons, audit events, and tenant access checks
 
 ## Recommended demo dataset

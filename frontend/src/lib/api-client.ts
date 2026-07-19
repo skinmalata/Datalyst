@@ -1,4 +1,4 @@
 export type RuntimeConfig={apiBaseUrl:string;auth0Domain:string;auth0ClientId:string;auth0Audience:string};
-export const config=()=>typeof window==="undefined"?{} as RuntimeConfig:(window as Window & {TRUEANALYZER_CONFIG?:RuntimeConfig}).TRUEANALYZER_CONFIG||{} as RuntimeConfig;
+export const config=()=>typeof window==="undefined"?{} as RuntimeConfig:(window as Window & {DATALYST_CONFIG?:RuntimeConfig}).DATALYST_CONFIG||{} as RuntimeConfig;
 let tokenGetter=()=>"",orgGetter=()=>"";export const setSession=(token:()=>string,org:()=>string)=>{tokenGetter=token;orgGetter=org};
 export async function api<T>(path:string,options:RequestInit={}){const headers=new Headers(options.headers);headers.set("content-type","application/json");if(tokenGetter())headers.set("authorization","Bearer "+tokenGetter());if(orgGetter())headers.set("x-organization-id",orgGetter());const response=await fetch(config().apiBaseUrl.replace(/\/$/,"")+path,{...options,headers});const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(body.error||"The request could not be completed.");return body as T}
