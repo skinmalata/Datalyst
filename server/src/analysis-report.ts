@@ -272,6 +272,11 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   const tables: AnalysisReport["tables"] = [];
   const recommendations: string[] = [];
   const warnings: string[] = [];
+  // Every action is paired with an observed fact. This prevents the report from
+  // presenting generic advice as if it were a conclusion from the dataset.
+  const recommend = (action: string, evidence: string) => {
+    recommendations.push(`${action} Evidence: ${evidence}.`);
+  };
   let forecastData: ForecastPoint[] = [];
 
   const summaryParts: string[] = [];
@@ -323,6 +328,11 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         headers: [groupDimension, metric, "Share", recordWord, prof.isMonetary ? "Avg" : "Mean"],
         rows: ranking.map(r => [r.label, prof.fmt(r.total), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), prof.fmt(r.avg)]),
       });
+
+      recommend(
+        `Review ${weakest.label} and test one targeted improvement before scaling it`,
+        `${leader.label} contributes ${prof.fmt(leader.total)} while ${weakest.label} contributes ${prof.fmt(weakest.total)}`,
+      );
 
       if (returnField && datasetType === "ecommerce") {
         const rr = groupReturnRate(rows, returnField, groupDimension);
@@ -378,7 +388,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
           const worstProduct = rr[0];
           if (worstProduct.rate > 0.2) {
             warnings.push(`${worstProduct.label} has a ${(worstProduct.rate * 100).toFixed(1)}% return rate — check product quality or descriptions.`);
-            recommendations.push(`Investigate root causes for ${worstProduct.label} returns (quality, sizing, description accuracy).`);
+            recommend(`Investigate root causes for ${worstProduct.label} returns before expanding it`, `${worstProduct.label} has a ${(worstProduct.rate * 100).toFixed(1)}% recorded return rate across ${worstProduct.count} records`);
           }
         }
       }
@@ -421,11 +431,11 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
       let trendDesc: string;
       if (consistency >= 75) {
         trendDesc = `Strong upward momentum — ${consistency.toFixed(0)}% of periods showed growth.`;
-        recommendations.push("Increase investment in this trajectory; set ambitious but achievable targets.");
+        recommend("Set the next-period target above the recent baseline, then monitor it weekly", `${positive} of ${changes.length} observed period-to-period changes were positive`);
       } else if (consistency <= 25) {
         trendDesc = `Persistent decline — ${(100 - consistency).toFixed(0)}% of periods showed decrease.`;
         warnings.push(`Trend is persistently declining. Investigate root causes before the trend solidifies.`);
-        recommendations.push("Conduct a root-cause analysis on the declining periods; identify what changed.");
+        recommend("Run a root-cause review of the declining periods before committing more budget", `${changes.length - positive} of ${changes.length} observed period-to-period changes were negative`);
       } else {
         trendDesc = `Mixed momentum — ${positive} up periods and ${changes.length - positive} down periods.`;
       }
@@ -499,9 +509,9 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
       if (slope < 0) {
         warnings.push(`Forecast projects continued decline. Without intervention, ${metric.toLowerCase()} could fall to ${prof.fmt(projectedValue)} next period.`);
-        recommendations.push(`Address the declining trend immediately — identify and act on the top 3 drivers of the downturn.`);
+        recommend(`Review the latest decline and assign owners to its likely drivers before the next period closes`, `the linear projection is ${prof.fmt(projectedValue)} next period, ${Math.abs(monthlyGrowthRate).toFixed(1)}% below the latest actual`);
       } else if (slope > 0 && r2 >= 0.5) {
-        recommendations.push(`The upward trend is statistically reliable (R² = ${r2.toFixed(2)}). Scale what's working and set targets based on the projected trajectory.`);
+        recommend(`Use the projected trajectory as a planning baseline and test which activities can be safely scaled`, `the ${series.length}-month trend is upward with R² = ${r2.toFixed(2)} and projects ${prof.fmt(projectedValue)} next period`);
       }
 
       if (forecastConfidence === "low") {
@@ -522,7 +532,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
       if (discRate > 0.5) {
         warnings.push(`${(discRate * 100).toFixed(0)}% of records have discounts. Verify discounts are driving profitable growth, not just volume.`);
-        recommendations.push("Run controlled promotion tests; measure impact on net revenue and returns, not just order count.");
+        recommend("Run a controlled promotion test and judge it on net performance rather than volume alone", `${(discRate * 100).toFixed(0)}% of records include a discount and the average recorded discount is ${(avgDisc <= 1 ? avgDisc * 100 : avgDisc).toFixed(1)}%`);
       }
 
       if (returnField) {
@@ -562,7 +572,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
     if (overallRR > 0.2) {
       warnings.push(`Overall return rate is ${(overallRR * 100).toFixed(1)}%. Review return reasons and refund value before treating gross sales as net performance.`);
-      recommendations.push("Prioritize a return-reduction initiative: audit return reasons, refund values, and root causes by product and region.");
+      recommend("Prioritize a return-reduction review by product and region before evaluating gross performance", `the overall recorded return rate is ${(overallRR * 100).toFixed(1)}%`);
     }
   }
 
@@ -642,7 +652,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         content: `**${leader.label}** leads with **${prof.fmt(leader.total)}** across ${leader.count} ${recordWord}. **${weakest.label}** trails at **${prof.fmt(weakest.total)}**.`,
         type: "finding",
       });
-      recommendations.push(`Study ${leader.label}'s practices and create a playbook for the team.`);
+      recommend(`Document ${leader.label}'s repeatable practices and test them with the lowest-performing peers`, `${leader.label} leads at ${prof.fmt(leader.total)} while ${weakest.label} records ${prof.fmt(weakest.total)}`);
     }
   }
 
@@ -672,7 +682,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
       const title = datasetType === "analytics" ? "High-activity records" : "Anomaly Detection";
       const content = datasetType === "analytics" ? `${anomalies.length} record${anomalies.length === 1 ? "" : "s"} exceeded ${prof.fmt(upper)} ${metric}. These are high-activity records, not automatically errors; inspect their source, page, campaign, or time period before acting.` : `${anomalies.length} unusual ${prof.recordLabel.toLowerCase()} detected (>${prof.fmt(upper)}). Validate whether they are data errors or exceptional cases.`;
       sections.push({ title, content, type: "warning" });
-      recommendations.push(datasetType === "analytics" ? `Inspect the ${anomalies.length} high-activity record${anomalies.length === 1 ? "" : "s"} with their source and date context before treating them as a growth signal.` : `Review the ${anomalies.length} outlier${anomalies.length === 1 ? "" : "s"} to determine if they represent genuine cases or data errors.`);
+      recommend(datasetType === "analytics" ? `Inspect the ${anomalies.length} high-activity record${anomalies.length === 1 ? "" : "s"} with source and date context before calling it growth` : `Validate the ${anomalies.length} outlier${anomalies.length === 1 ? "" : "s"} before using it in decisions`, `${anomalies.length} recorded value${anomalies.length === 1 ? "" : "s"} exceed the statistical threshold of ${prof.fmt(upper)}`);
     }
   }
 
@@ -685,7 +695,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
     if (top3Pct >= 0.7) {
       warnings.push(`Top 3 ${groupDimension}s account for ${(top3Pct * 100).toFixed(0)}% of ${metric.toLowerCase()} — high concentration risk.`);
-      recommendations.push(`Diversify across ${groupDimension}s to reduce dependency on top performers.`);
+      recommend(`Create a plan to reduce dependency on the largest ${groupDimension}s`, `the top three ${groupDimension}s account for ${(top3Pct * 100).toFixed(0)}% of recorded ${metric.toLowerCase()}`);
     }
   }
 
@@ -718,33 +728,33 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (datasetType === "analytics") {
     const sourceField = find(columns, [/source|medium|channel|campaign/i]);
     const conversionField = find(columns, [/conversion|goal|signup|purchase/i]);
-    if (sourceField) recommendations.push(`Compare ${metric} by ${sourceField} to identify the channels driving meaningful activity.`);
-    else recommendations.push(`Add a source, channel, page, or campaign field to explain what drives ${metric}.`);
-    if (conversionField) recommendations.push(`Compare ${metric} with ${conversionField} to distinguish high traffic from high-value activity.`);
-    else recommendations.push("Add a conversion or outcome field before treating views as business impact.");
+    if (sourceField) recommend(`Compare ${metric} by ${sourceField} before reallocating effort`, `the uploaded data includes ${sourceField} but the current report has not attributed activity to it`);
+    else recommend(`Add a source, channel, page, or campaign field before attributing ${metric} changes`, `the uploaded data has no source, channel, page, or campaign field`);
+    if (conversionField) recommend(`Compare ${metric} with ${conversionField} to separate high activity from high-value outcomes`, `the uploaded data includes both ${metric} and ${conversionField}`);
+    else recommend(`Add a conversion or outcome field before treating ${metric} as business impact`, `the uploaded data records ${metric} but contains no conversion or outcome field`);
   } else if (datasetType === "ecommerce") {
     if (!recommendations.length) {
-      recommendations.push("Upload a dataset with region, product, and date fields for richer analysis.");
+      recommend("Add region, product, and date fields for more actionable segmentation", "the current dataset does not contain enough of these dimensions to identify where performance changes");
     }
   } else if (datasetType === "hr") {
     if (!recommendations.length) {
-      recommendations.push("Analyze attrition rates by department and tenure to identify retention risks.");
+      recommend("Add or analyze attrition by department and tenure before setting retention actions", "the current report did not find sufficient attrition evidence to identify a retention driver");
     }
-    recommendations.push("Compare compensation across departments to ensure internal equity.");
+    recommend("Compare compensation across departments before drawing conclusions about internal equity", "the dataset is classified as HR data and includes employee-related measures");
   } else if (datasetType === "financial") {
     if (!recommendations.length) {
-      recommendations.push("Track period-over-period changes to identify emerging trends early.");
+      recommend("Track period-over-period changes before committing to a financial direction", "the dataset is classified as financial data but does not provide enough dated observations for a trend");
     }
-    recommendations.push("Compare actuals against budget to flag variances for investigation.");
+    recommend("Compare actuals against budget or target before treating performance as favourable or unfavourable", "the uploaded data contains financial measures but no budget comparison was identified");
   } else {
     if (!recommendations.length) {
-      recommendations.push("Add more dimensions (region, category, date) for deeper segmented analysis.");
+      recommend("Add region, category, or date fields for more specific actions", `the uploaded data has ${columns.length} fields but lacks enough dimensions for a reliable segment comparison`);
     }
   }
 
   // ── Final Recommendations ──
   if (recommendations.length === 0) {
-    recommendations.push("Upload a dataset with additional dimensions for richer analysis.");
+    recommend("Add a business dimension such as region, category, or date before making operational changes", `the uploaded data does not contain a segment or time field that can explain variation in ${metric}`);
   }
 
   const summary = sections.find(s => s.title === "Executive Summary")?.content || "";

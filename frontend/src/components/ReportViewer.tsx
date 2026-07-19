@@ -209,6 +209,14 @@ function downloadReportHtml(report: Report, rowCount: number, colCount: number) 
 
 type Props = { open: boolean; onClose: () => void; filter?: { field: string; value: string } };
 
+function splitRecommendation(recommendation: string) {
+  const marker = " Evidence: ";
+  const position = recommendation.indexOf(marker);
+  return position === -1
+    ? { action: recommendation, evidence: null }
+    : { action: recommendation.slice(0, position), evidence: recommendation.slice(position + marker.length) };
+}
+
 function ExecutiveInfographic({ report, rowCount, fieldCount, breakdown }: {
   report: Report;
   rowCount: number;
@@ -253,12 +261,13 @@ function ExecutiveInfographic({ report, rowCount, fieldCount, breakdown }: {
           <p className="text-base font-medium leading-relaxed text-white">{headline || report.summary}</p>
           {actions.length > 0 && (
             <div className="mt-5 grid gap-2 sm:grid-cols-3">
-              {actions.map((action, index) => (
-                <div key={action} className="rounded-xl border border-border bg-background/50 p-3">
+              {actions.map((recommendation, index) => {
+                const { action } = splitRecommendation(recommendation);
+                return <div key={recommendation} className="rounded-xl border border-border bg-background/50 p-3">
                   <p className="text-[10px] font-bold text-green-400">NEXT {index + 1}</p>
                   <p className="mt-1 text-xs leading-relaxed text-text-secondary">{action}</p>
                 </div>
-              ))}
+              })}
             </div>
           )}
         </div>
@@ -483,9 +492,20 @@ export function ReportViewer({ open, onClose, filter }: Props) {
               <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-5">
                 <p className="mb-4 text-sm font-semibold text-green-400">→ Prioritized Recommendations</p>
                 <div className="space-y-2">
-                  {report.recommendations.map((r, i) => (
-                    <InsightCard key={i} icon={String(i + 1)} title={`Action ${i + 1}`} detail={r} color="green" />
-                  ))}
+                  {report.recommendations.map((recommendation, i) => {
+                    const { action, evidence } = splitRecommendation(recommendation);
+                    return (
+                      <div key={recommendation} className="rounded-xl border border-green-400/20 border-l-4 border-l-green-400 bg-surface p-4">
+                        <div className="flex gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-400/10 text-sm text-green-400">{i + 1}</span>
+                          <div>
+                            <p className="text-sm font-semibold text-white">{action}</p>
+                            {evidence && <p className="mt-2 text-xs leading-relaxed text-text-secondary"><span className="font-semibold text-primary">Data evidence:</span> {evidence}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
