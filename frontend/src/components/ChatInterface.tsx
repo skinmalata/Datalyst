@@ -7,10 +7,12 @@ import { QueryInput } from "./QueryInput";
 import { ChatMessage } from "./ChatMessage";
 import { DatasetReview } from "./DatasetReview";
 import { AnalysisFilter, type ManualFilter } from "./AnalysisFilter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MetricGovernance } from "./MetricGovernance";
 import { DatasetOnboardingReport } from "./DatasetOnboardingReport";
 import { ExecutiveBriefing } from "./ExecutiveBriefing";
+import { AnalysisWizard } from "./AnalysisWizard";
+import { ReportViewer } from "./ReportViewer";
 
 function formatValue(value: unknown, field = "", method = "") {
   const number = Number(value);
@@ -42,7 +44,17 @@ function executiveAnswer(output: any, field = "") {
 export function ChatInterface() {
   const { datasetId, rows, profile, preparation, messages, add, setLoading, loading } = useStore();
   const [manualFilter, setManualFilter] = useState<ManualFilter>();
+  const [showWizard, setShowWizard] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const questions = generateSuggestedQueries(rows);
+
+  useEffect(() => {
+    if (datasetId && rows.length > 0 && messages.length === 0) {
+      const t = setTimeout(() => setShowWizard(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [datasetId]);
+
   const ask = async (question: string) => {
     add({ id: crypto.randomUUID(), role: "user", content: question });
     setLoading(true);
@@ -68,6 +80,18 @@ export function ChatInterface() {
     <div><p className="mb-1 text-sm font-semibold text-text-secondary">Recommended leadership questions</p><p className="mb-3 text-sm text-text-muted">Ten questions tailored to the measures and business dimensions in your uploaded data.</p><div className="grid gap-2 sm:grid-cols-2">{questions.map(({ question, description }) => <button key={question} onClick={() => ask(question)} className="rounded-lg border border-border bg-surface p-4 text-left"><b>{question}</b><span className="mt-1 block text-sm text-text-muted">{description}</span></button>)}</div></div>
     {messages.map((message) => <ChatMessage key={message.id} role={message.role} content={message.content} values={message.values} chartType={message.chartType} insights={message.insights} />)}
     {loading ? <p className="text-text-muted">Checking your data…</p> : null}
-    <QueryInput disabled={!datasetId || loading} onSubmit={ask} />
+    <div className="flex items-center gap-3">
+      <button
+        onClick={() => setShowWizard(true)}
+        className="shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary hover:bg-primary/20"
+      >
+        ✦ Analysis wizard
+      </button>
+      <div className="flex-1">
+        <QueryInput disabled={!datasetId || loading} onSubmit={ask} />
+      </div>
+    </div>
+    {showWizard && <AnalysisWizard onComplete={() => { setShowWizard(false); setShowReport(true); }} />}
+    {showReport && <ReportViewer open={showReport} onClose={() => setShowReport(false)} />}
   </div>;
 }
