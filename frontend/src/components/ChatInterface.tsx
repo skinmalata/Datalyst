@@ -53,7 +53,7 @@ export function ChatInterface() {
       const t = setTimeout(() => setShowWizard(true), 800);
       return () => clearTimeout(t);
     }
-  }, [datasetId]);
+  }, [datasetId, rows.length, messages.length]);
 
   const ask = async (question: string) => {
     add({ id: crypto.randomUUID(), role: "user", content: question });
@@ -91,7 +91,7 @@ export function ChatInterface() {
         <QueryInput disabled={!datasetId || loading} onSubmit={ask} />
       </div>
     </div>
-    {showWizard && <AnalysisWizard onComplete={() => { setShowWizard(false); setShowReport(true); }} />}
+    {showWizard && <AnalysisWizard onComplete={(question) => { setShowWizard(false); setShowReport(true); if (question) ask(question); }} />}
     {showReport && <ReportViewer open={showReport} onClose={() => setShowReport(false)} />}
   </div>;
 }

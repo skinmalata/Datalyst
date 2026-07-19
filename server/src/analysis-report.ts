@@ -563,7 +563,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     kpis.push({ label: "RETURN RATE", value: pct(overallRR), positive: overallRR < 0.15 });
 
     if (overallRR > 0.2) {
-      warnings.push(`Overall return rate of ${(overallRR * 100).toFixed(1)}% is above industry norms (8-15%). This is a major margin leak.`);
+      warnings.push(`Overall return rate is ${(overallRR * 100).toFixed(1)}%. Review return reasons and refund value before treating gross sales as net performance.`);
       recommendations.push("Prioritize a return-reduction initiative: audit return reasons, refund values, and root causes by product and region.");
     }
   }

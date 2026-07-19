@@ -9,7 +9,7 @@ const OBJECTIVES = [
   { icon: "⟐", label: "Forecast future values", desc: "Project trends into the future" },
 ];
 
-type Props = { onComplete: () => void };
+type Props = { onComplete: (question?: string) => void };
 
 export function AnalysisWizard({ onComplete }: Props) {
   const { rows, profile } = useStore();
@@ -26,13 +26,13 @@ export function AnalysisWizard({ onComplete }: Props) {
   const colCount = rows[0] ? Object.keys(rows[0]).length : 0;
   const totalSteps = 4;
 
-  const close = () => {
+  const close = (analysisQuestion?: string) => {
     setVisible(false);
-    setTimeout(onComplete, 300);
+    setTimeout(() => onComplete(analysisQuestion), 300);
   };
 
   const runAnalysis = () => {
-    close();
+    close(question.trim() || undefined);
   };
 
   const next = () => {
@@ -82,7 +82,7 @@ export function AnalysisWizard({ onComplete }: Props) {
         <div className="flex flex-1 flex-col overflow-y-auto p-6">
           <div className="mb-4 flex items-center justify-between md:hidden">
             <span className="text-xs font-bold text-primary">STEP {step} OF {totalSteps}</span>
-            <button onClick={close} className="text-2xl text-text-muted hover:text-white">×</button>
+            <button onClick={() => close()} className="text-2xl text-text-muted hover:text-white">×</button>
           </div>
 
           {/* Step 1: Choose data */}
@@ -92,7 +92,7 @@ export function AnalysisWizard({ onComplete }: Props) {
               <h2 className="mb-2 text-xl font-bold">Choose the data to analyze</h2>
               <p className="mb-5 text-sm text-text-secondary">Your analysis will inherit the current dataset and its detected fields.</p>
               <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/10 p-4">
-                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20 text-sm font-bold text-primary">CSV</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20 text-sm font-bold text-primary">DATA</span>
                 <div className="flex-1">
                   <p className="font-semibold">{rows.length.toLocaleString()} rows · {colCount} fields</p>
                   <p className="text-sm text-text-muted">{profile?.fields.filter(f => f.kind === "number").length ?? 0} measures · {profile?.fields.filter(f => f.kind === "category").length ?? 0} dimensions</p>
@@ -183,7 +183,7 @@ export function AnalysisWizard({ onComplete }: Props) {
         </div>
 
         {/* Close button (desktop) */}
-        <button onClick={close} className="absolute right-4 top-4 hidden h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-lg text-text-muted hover:text-white md:flex">
+        <button onClick={() => close()} className="absolute right-4 top-4 hidden h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-lg text-text-muted hover:text-white md:flex">
           ×
         </button>
       </div>
