@@ -16,19 +16,36 @@ export type AnalysisReport = {
   warnings: string[];
 };
 
+type DatasetType = "ecommerce" | "analytics" | "financial" | "hr" | "general";
+
+type Profile = {
+  type: DatasetType;
+  recordLabel: string;
+  metricLabel: string;
+  valuePrefix: string;
+  isMonetary: boolean;
+  fmt: (v: number) => string;
+};
+
 function num(value: unknown): number | null {
   const parsed = Number(String(value ?? "").trim().replace(/^\((.*)\)$/, "-$1").replace(/[$,%\s,]/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function fmt(value: number): string {
-  if (Math.abs(value) >= 1_000_000) return "$" + (value / 1_000_000).toFixed(2) + "M";
-  if (Math.abs(value) >= 1_000) return "$" + (value / 1_000).toFixed(1) + "K";
-  return "$" + value.toFixed(0);
+function fmtGeneric(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(2) + "M";
+  if (Math.abs(v) >= 1_000) return (v / 1_000).toFixed(1) + "K";
+  return v.toFixed(0);
 }
 
-function pct(value: number): string {
-  return (value * 100).toFixed(1) + "%";
+function fmtMoney(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return "$" + (v / 1_000_000).toFixed(2) + "M";
+  if (Math.abs(v) >= 1_000) return "$" + (v / 1_000).toFixed(1) + "K";
+  return "$" + v.toFixed(0);
+}
+
+function pct(v: number): string {
+  return (v * 100).toFixed(1) + "%";
 }
 
 function find(columns: string[], patterns: RegExp[]): string | undefined {
@@ -61,35 +78,100 @@ function groupBy(rows: Row[], field: string, dimension: string): Map<string, { t
   return groups;
 }
 
-function returnRate(rows: Row[], returnField: string): number {
-  const flags = rows.map(r => num(r[returnField])).filter((v): v is number => v !== null);
-  if (!flags.length) return 0;
-  return flags.filter(v => v > 0).length / flags.length;
+function detectDatasetType(columns: string[], rows: Row[]): DatasetType {
+  const lower = columns.map(c => c.toLowerCase());
+
+  function countHits(patterns: RegExp[]): number {
+    return lower.filter(c => patterns.some(p => p.test(c))).length;
+  }
+
+  const ecommerceHits = countHits([/order|revenue|sales|cart|checkout|purchase|discount|return|shipping|invoice|customer.?type|payment/i]);
+  const analyticsHits = countHits([/page.?view|session|bounce|click|impression|visit|duration|traffic|source|medium|campaign|conversion.?rate|exit|entrance/i]);
+  const financialHits = countHits([/balance|debit|credit|account|ledger|expense|profit|loss|equity|liability|asset|tax|interest.?rate|dividend/i]);
+  const hrHits = countHits([/employee|salary|department|hire.?date|termination|performance|headcount|attrition|tenure|payroll|bonus|benefit/i]);
+
+  const types: [DatasetType, number][] = [
+    ["ecommerce", ecommerceHits],
+    ["analytics", analyticsHits],
+    ["financial", financialHits],
+    ["hr", hrHits],
+  ];
+
+  const sorted = types.sort((a, b) => b[1] - a[1]);
+  if (sorted[0][1] >= 2) return sorted[0][0];
+
+  if (analyticsHits >= 1 && rows.length > 0) {
+    const sample = rows[0];
+    for (const c of columns) {
+      const v = sample[c];
+      if (typeof v === "number" && v >= 0 && v < 1 && String(c).toLowerCase().match(/rate|ratio|bounce|conversion/)) {
+        return "analytics";
+      }
+    }
+  }
+
+  return "general";
 }
 
-function groupReturnRate(rows: Row[], returnField: string, dimension: string): { label: string; rate: number; count: number }[] {
-  const groups = new Map<string, { returned: number; total: number }>();
-  rows.forEach(row => {
-    const r = num(row[returnField]);
-    if (r === null) return;
-    const key = String(row[dimension] ?? "Unknown");
-    const entry = groups.get(key) || { returned: 0, total: 0 };
-    entry.total++;
-    if (r > 0) entry.returned++;
-    groups.set(key, entry);
-  });
-  return [...groups]
-    .map(([label, g]) => ({ label, rate: g.total ? g.returned / g.total : 0, count: g.total }))
-    .sort((a, b) => b.rate - a.rate);
+function buildProfile(type: DatasetType, metricField: string): Profile {
+  switch (type) {
+    case "ecommerce":
+      return {
+        type,
+        recordLabel: "Orders",
+        metricLabel: metricField || "Revenue",
+        valuePrefix: "",
+        isMonetary: true,
+        fmt: fmtMoney,
+      };
+    case "analytics":
+      return {
+        type,
+        recordLabel: "Records",
+        metricLabel: metricField || "Events",
+        valuePrefix: "",
+        isMonetary: false,
+        fmt: fmtGeneric,
+      };
+    case "financial":
+      return {
+        type,
+        recordLabel: "Transactions",
+        metricLabel: metricField || "Value",
+        valuePrefix: "",
+        isMonetary: true,
+        fmt: fmtMoney,
+      };
+    case "hr":
+      return {
+        type,
+        recordLabel: "Employees",
+        metricLabel: metricField || "Measure",
+        valuePrefix: "",
+        isMonetary: false,
+        fmt: fmtGeneric,
+      };
+    default:
+      return {
+        type,
+        recordLabel: "Records",
+        metricLabel: metricField || "Value",
+        valuePrefix: "",
+        isMonetary: false,
+        fmt: fmtGeneric,
+      };
+  }
 }
 
 export function generateAnalysisReport(rows: Row[], columns: string[]): AnalysisReport {
-  const metric = find(columns, [/total.?price|revenue|sales|amount|value|revenue/i])
+  const datasetType = detectDatasetType(columns, rows);
+
+  const metric = find(columns, [/total.?price|revenue|sales|amount|value|balance|expense|salary|payroll/i])
     || columns.find(c => rows.some(r => num(r[c]) !== null));
   const dateField = find(columns, [/date|order.?date|month|period|timestamp/i]);
   const regionField = find(columns, [/region|country|market|territory|area|zone/i]);
   const productField = find(columns, [/product|category|item|sku|line|type/i]);
-  const returnField = find(columns, [/returned|return.?flag|is.?return/i]);
+  const returnField = find(columns, [/returned|return.?flag|is.?return|refund/i]);
   const discountField = find(columns, [/discount/i]);
   const paymentField = find(columns, [/payment|pay.?method|tender/i]);
   const customerTypeField = find(columns, [/customer.?type|segment|client.?type/i]);
@@ -101,26 +183,31 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (!metric) {
     return {
       title: "Data Analysis Report",
-      summary: "No numeric measure detected. Add a sales, revenue, or amount column for analysis.",
+      summary: "No numeric measure detected in the dataset.",
       sections: [],
       kpis: [],
       tables: [],
       recommendations: [],
-      warnings: ["No numeric measure detected in the dataset."],
+      warnings: ["No numeric measure found. Upload a dataset with at least one numeric column."],
     };
   }
+
+  const prof = buildProfile(datasetType, metric);
 
   const values = rows.map(r => num(r[metric])).filter((v): v is number => v !== null);
   const total = values.reduce((s, v) => s + v, 0);
   const avg = values.length ? total / values.length : 0;
   const med = median(values);
-  const std = stdDev(values);
+
+  const metricLabel = prof.isMonetary ? "Total " + metric : "Total " + metric;
+  const avgLabel = prof.isMonetary ? "Avg " + metric : "Mean " + metric;
+  const medianLabel = prof.isMonetary ? "Median " + metric : "Median " + metric;
 
   const kpis: AnalysisReport["kpis"] = [
-    { label: "TOTAL " + metric.toUpperCase(), value: fmt(total) },
-    { label: "ORDERS", value: values.length.toLocaleString() },
-    { label: "AVG ORDER VALUE", value: fmt(avg) },
-    { label: "MEDIAN ORDER", value: fmt(med) },
+    { label: metricLabel.toUpperCase(), value: prof.fmt(total) },
+    { label: prof.recordLabel.toUpperCase(), value: values.length.toLocaleString() },
+    { label: avgLabel.toUpperCase(), value: prof.fmt(avg) },
+    { label: medianLabel.toUpperCase(), value: prof.fmt(med) },
   ];
 
   if (quantityField) {
@@ -133,49 +220,57 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   const recommendations: string[] = [];
   const warnings: string[] = [];
 
+  const summaryParts: string[] = [];
+  summaryParts.push(`**${prof.fmt(total)}** in ${metric} across **${values.length.toLocaleString()}** ${prof.recordLabel.toLowerCase()}`);
+  summaryParts.push(`with an average of **${prof.fmt(avg)}** per record`);
+  const summarySentence = summaryParts.join(" ") + ".";
+
   sections.push({
     title: "Executive Summary",
-    content: `**${fmt(total)}** in ${metric} across **${values.length.toLocaleString()}** records with an average order value of **${fmt(avg)}**.`,
+    content: summarySentence,
     type: "text",
   });
 
-  // ── Regional Analysis ──
-  if (regionField) {
-    const groups = groupBy(rows, metric, regionField);
+  // ── Regional / Dimension Analysis ──
+  const groupDimension = regionField || productField;
+  if (groupDimension) {
+    const groups = groupBy(rows, metric, groupDimension);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count,
-      aov: g.count ? g.total / g.count : 0,
+      label, total: g.total, count: g.count,
+      avg: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
       const leader = ranking[0];
       const weakest = ranking.at(-1)!;
-      kpis.push({ label: "TOP " + regionField.toUpperCase(), value: leader.label, change: (leader.share * 100).toFixed(1) + "% share" });
 
+      kpis.push({
+        label: "TOP " + groupDimension.toUpperCase(),
+        value: leader.label,
+        change: (leader.share * 100).toFixed(1) + "% share",
+      });
+
+      const sectionTitle = regionField ? groupDimension + " Performance" : "Category Performance";
       sections.push({
-        title: "Regional Performance",
-        content: `**${leader.label}** leads with **${fmt(leader.revenue)}** (${(leader.share * 100).toFixed(1)}% share) and the highest AOV of **${fmt(leader.aov)}**. **${weakest.label}** trails at **${fmt(weakest.revenue)}** (${(weakest.share * 100).toFixed(1)}%).`,
+        title: sectionTitle,
+        content: `**${leader.label}** leads with **${prof.fmt(leader.total)}** (${(leader.share * 100).toFixed(1)}% share). **${weakest.label}** trails at **${prof.fmt(weakest.total)}** (${(weakest.share * 100).toFixed(1)}%).`,
         type: "finding",
       });
 
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
-        title: "Revenue by " + regionField,
-        headers: [regionField, "Revenue", "Share", "Orders", "AOV"],
-        rows: ranking.map(r => [r.label, fmt(r.revenue), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), fmt(r.aov)]),
+        title: metric + " by " + groupDimension,
+        headers: [groupDimension, metric, "Share", recordWord, prof.isMonetary ? "Avg" : "Mean"],
+        rows: ranking.map(r => [r.label, prof.fmt(r.total), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), prof.fmt(r.avg)]),
       });
 
-      if (returnField) {
-        const rr = groupReturnRate(rows, returnField, regionField);
+      if (returnField && datasetType === "ecommerce") {
+        const rr = groupReturnRate(rows, returnField, groupDimension);
         if (rr.length) {
-          sections.push({
-            title: "Regional Return Rates",
-            content: rr.map(r => `**${r.label}**: ${(r.rate * 100).toFixed(1)}% return rate (${r.count} orders)`).join("; ") + ".",
-            type: "finding",
-          });
           tables.push({
-            title: "Return Rate by " + regionField,
-            headers: [regionField, "Return Rate", "Orders"],
+            title: "Return Rate by " + groupDimension,
+            headers: [groupDimension, "Return Rate", recordWord],
             rows: rr.map(r => [r.label, (r.rate * 100).toFixed(1) + "%", r.count.toLocaleString()]),
           });
           const worstRR = rr[0];
@@ -184,20 +279,17 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
           }
         }
       }
-
-      const leaderPractices = `Replicate ${leader.label}'s approach (highest AOV: ${fmt(leader.aov)}) across underperforming ${regionField}s.`;
-      recommendations.push(leaderPractices);
     }
   }
 
-  // ── Product Analysis ──
-  if (productField) {
+  // ── Product / Category Analysis (if both region and product exist) ──
+  if (regionField && productField) {
     const groups = groupBy(rows, metric, productField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count,
-      aov: g.count ? g.total / g.count : 0,
+      label, total: g.total, count: g.count,
+      avg: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
       const leader = ranking[0];
@@ -205,22 +297,23 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
       sections.push({
         title: "Product Performance",
-        content: `**${leader.label}** is the top product at **${fmt(leader.revenue)}** (${(leader.share * 100).toFixed(1)}%). **${weakest.label}** generates the least at **${fmt(weakest.revenue)}** (${(weakest.share * 100).toFixed(1)}%).`,
+        content: `**${leader.label}** is the top product at **${prof.fmt(leader.total)}** (${(leader.share * 100).toFixed(1)}%). **${weakest.label}** generates the least at **${prof.fmt(weakest.total)}** (${(weakest.share * 100).toFixed(1)}%).`,
         type: "finding",
       });
 
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
-        title: "Revenue by " + productField,
-        headers: [productField, "Revenue", "Share", "Orders", "AOV"],
-        rows: ranking.map(r => [r.label, fmt(r.revenue), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), fmt(r.aov)]),
+        title: metric + " by " + productField,
+        headers: [productField, metric, "Share", recordWord, prof.isMonetary ? "Avg" : "Mean"],
+        rows: ranking.map(r => [r.label, prof.fmt(r.total), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), prof.fmt(r.avg)]),
       });
 
-      if (returnField) {
+      if (returnField && datasetType === "ecommerce") {
         const rr = groupReturnRate(rows, returnField, productField);
         if (rr.length) {
           tables.push({
             title: "Return Rate by " + productField,
-            headers: [productField, "Return Rate", "Orders"],
+            headers: [productField, "Return Rate", recordWord],
             rows: rr.map(r => [r.label, (r.rate * 100).toFixed(1) + "%", r.count.toLocaleString()]),
           });
           const worstProduct = rr[0];
@@ -248,21 +341,23 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     });
 
     const series = [...buckets].sort((a, b) => a[0].localeCompare(b[0])).map(([label, g]) => ({
-      label, revenue: g.total, count: g.count,
+      label, total: g.total, count: g.count,
     }));
 
     if (series.length >= 3) {
-      const revenues = series.map(s => s.revenue);
+      const totals = series.map(s => s.total);
       const changes: number[] = [];
-      for (let i = 1; i < revenues.length; i++) changes.push(revenues[i] - revenues[i - 1]);
+      for (let i = 1; i < totals.length; i++) changes.push(totals[i] - totals[i - 1]);
       const positive = changes.filter(c => c > 0).length;
       const consistency = (positive / changes.length) * 100;
 
-      const firstHalf = revenues.slice(0, Math.floor(revenues.length / 2));
-      const secondHalf = revenues.slice(Math.floor(revenues.length / 2));
+      const firstHalf = totals.slice(0, Math.floor(totals.length / 2));
+      const secondHalf = totals.slice(Math.floor(totals.length / 2));
       const firstAvg = firstHalf.reduce((s, v) => s + v, 0) / firstHalf.length;
       const secondAvg = secondHalf.reduce((s, v) => s + v, 0) / secondHalf.length;
       const halfChange = firstAvg > 0 ? ((secondAvg - firstAvg) / Math.abs(firstAvg)) * 100 : 0;
+
+      const metricWord = prof.isMonetary ? "Revenue" : metric;
 
       let trendDesc: string;
       if (consistency >= 75) {
@@ -270,7 +365,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         recommendations.push("Increase investment in this trajectory; set ambitious but achievable targets.");
       } else if (consistency <= 25) {
         trendDesc = `Persistent decline — ${(100 - consistency).toFixed(0)}% of periods showed decrease.`;
-        warnings.push("Revenue trend is persistently declining. Investigate root causes before the trend solidifies.");
+        warnings.push(`Trend is persistently declining. Investigate root causes before the trend solidifies.`);
         recommendations.push("Conduct a root-cause analysis on the declining periods; identify what changed.");
       } else {
         trendDesc = `Mixed momentum — ${positive} up periods and ${changes.length - positive} down periods.`;
@@ -286,14 +381,14 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         type: "finding",
       });
 
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
         title: "Monthly " + metric,
-        headers: ["Month", "Revenue", "Orders"],
-        rows: series.slice(-12).map(s => [s.label, fmt(s.revenue), s.count.toLocaleString()]),
+        headers: ["Month", metric, recordWord],
+        rows: series.slice(-12).map(s => [s.label, prof.fmt(s.total), s.count.toLocaleString()]),
       });
     }
 
-    // Year-over-year
     const yearBuckets = new Map<number, number>();
     rows.forEach(row => {
       const d = new Date(String(row[dateField] ?? ""));
@@ -309,8 +404,8 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     }
   }
 
-  // ── Discount Analysis ──
-  if (discountField) {
+  // ── Discount Analysis (ecommerce only) ──
+  if (discountField && datasetType === "ecommerce") {
     const discValues = rows.map(r => num(r[discountField])).filter((v): v is number => v !== null);
     if (discValues.length) {
       const avgDisc = discValues.reduce((s, v) => s + v, 0) / discValues.length;
@@ -320,7 +415,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
       kpis.push({ label: "AVG DISCOUNT", value: (avgDisc <= 1 ? avgDisc * 100 : avgDisc).toFixed(1) + "%" });
 
       if (discRate > 0.5) {
-        warnings.push(`${(discRate * 100).toFixed(0)}% of orders have discounts. Verify discounts are driving profitable growth, not just volume.`);
+        warnings.push(`${(discRate * 100).toFixed(0)}% of records have discounts. Verify discounts are driving profitable growth, not just volume.`);
         recommendations.push("Run controlled promotion tests; measure impact on net revenue and returns, not just order count.");
       }
 
@@ -338,7 +433,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         const discReturnTable = [...discGroups]
           .map(([d, g]) => ({
             discount: (d * 100).toFixed(0) + "%",
-            orders: g.total,
+            records: g.total,
             returnRate: g.total ? ((g.returned / g.total) * 100).toFixed(1) + "%" : "0%",
           }))
           .sort((a, b) => a.discount.localeCompare(b.discount));
@@ -346,16 +441,16 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
         if (discReturnTable.length > 1) {
           tables.push({
             title: "Discount vs Return Rate",
-            headers: ["Discount", "Orders", "Return Rate"],
-            rows: discReturnTable.map(r => [r.discount, r.orders.toLocaleString(), r.returnRate]),
+            headers: ["Discount", prof.recordLabel, "Return Rate"],
+            rows: discReturnTable.map(r => [r.discount, r.records.toLocaleString(), r.returnRate]),
           });
         }
       }
     }
   }
 
-  // ── Return Analysis ──
-  if (returnField) {
+  // ── Return Analysis (ecommerce only) ──
+  if (returnField && datasetType === "ecommerce") {
     const overallRR = returnRate(rows, returnField);
     kpis.push({ label: "RETURN RATE", value: pct(overallRR), positive: overallRR < 0.15 });
 
@@ -365,18 +460,19 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     }
   }
 
-  // ── Payment Method Analysis ──
-  if (paymentField) {
+  // ── Payment Method Analysis (ecommerce only) ──
+  if (paymentField && datasetType === "ecommerce") {
     const groups = groupBy(rows, metric, paymentField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+      label, total: g.total, count: g.count, avg: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
         title: "Revenue by " + paymentField,
-        headers: [paymentField, "Revenue", "Orders", "AOV"],
-        rows: ranking.map(r => [r.label, fmt(r.revenue), r.count.toLocaleString(), fmt(r.aov)]),
+        headers: [paymentField, metric, recordWord, prof.isMonetary ? "Avg" : "Mean"],
+        rows: ranking.map(r => [r.label, prof.fmt(r.total), r.count.toLocaleString(), prof.fmt(r.avg)]),
       });
 
       if (returnField) {
@@ -388,66 +484,69 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     }
   }
 
-  // ── Customer Type Analysis ──
+  // ── Customer / Segment Analysis ──
   if (customerTypeField) {
     const groups = groupBy(rows, metric, customerTypeField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+      label, total: g.total, count: g.count, avg: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
+      const recordWord = prof.recordLabel.toLowerCase();
       sections.push({
-        title: "Customer Segment Analysis",
-        content: ranking.map(r => `**${r.label}**: ${fmt(r.revenue)} (${(r.share * 100).toFixed(1)}%), ${r.count.toLocaleString()} orders, ${fmt(r.aov)} AOV`).join("; ") + ".",
+        title: "Segment Analysis",
+        content: ranking.map(r => `**${r.label}**: ${prof.fmt(r.total)} (${(r.share * 100).toFixed(1)}%), ${r.count.toLocaleString()} ${recordWord}`).join("; ") + ".",
         type: "finding",
       });
     }
   }
 
-  // ── Store/Location Analysis ──
-  if (storeField) {
+  // ── Store / Location Analysis ──
+  if (storeField && !regionField) {
     const groups = groupBy(rows, metric, storeField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+      label, total: g.total, count: g.count, avg: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
-        title: "Revenue by " + storeField,
-        headers: [storeField, "Revenue", "Orders", "AOV"],
-        rows: ranking.map(r => [r.label, fmt(r.revenue), r.count.toLocaleString(), fmt(r.aov)]),
+        title: metric + " by " + storeField,
+        headers: [storeField, metric, recordWord, prof.isMonetary ? "Avg" : "Mean"],
+        rows: ranking.map(r => [r.label, prof.fmt(r.total), r.count.toLocaleString(), prof.fmt(r.avg)]),
       });
     }
   }
 
-  // ── Salesperson Analysis ──
+  // ── Salesperson / Agent Analysis ──
   if (salespersonField) {
     const groups = groupBy(rows, metric, salespersonField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
-    })).sort((a, b) => b.revenue - a.revenue);
+      label, total: g.total, count: g.count, avg: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.total - a.total);
 
     if (ranking.length >= 2) {
       const leader = ranking[0];
       const weakest = ranking.at(-1)!;
-      kpis.push({ label: "TOP " + salespersonField.toUpperCase(), value: leader.label, change: fmt(leader.revenue) });
+      const recordWord = prof.recordLabel.toLowerCase();
+      kpis.push({ label: "TOP " + salespersonField.toUpperCase(), value: leader.label, change: prof.fmt(leader.total) });
       sections.push({
-        title: "Salesperson Performance",
-        content: `**${leader.label}** leads with **${fmt(leader.revenue)}** across ${leader.count} orders (${fmt(leader.aov)} AOV). **${weakest.label}** trails at **${fmt(weakest.revenue)}**.`,
+        title: "Performance Breakdown",
+        content: `**${leader.label}** leads with **${prof.fmt(leader.total)}** across ${leader.count} ${recordWord}. **${weakest.label}** trails at **${prof.fmt(weakest.total)}**.`,
         type: "finding",
       });
-      recommendations.push(`Study ${leader.label}'s sales practices and create a playbook for the team.`);
+      recommendations.push(`Study ${leader.label}'s practices and create a playbook for the team.`);
     }
   }
 
-  // ── Shipping Cost Analysis ──
-  if (shippingField) {
+  // ── Shipping Cost Analysis (ecommerce only) ──
+  if (shippingField && datasetType === "ecommerce") {
     const shipValues = rows.map(r => num(r[shippingField])).filter((v): v is number => v !== null);
     if (shipValues.length) {
       const totalShip = shipValues.reduce((s, v) => s + v, 0);
       const avgShip = totalShip / shipValues.length;
-      kpis.push({ label: "AVG SHIPPING", value: "$" + avgShip.toFixed(2) });
+      kpis.push({ label: "AVG SHIPPING", value: fmtMoney(avgShip) });
       if (total > 0) {
         const shipPct = (totalShip / total) * 100;
         if (shipPct > 2) {
@@ -459,31 +558,30 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
 
   // ── Anomaly Detection ──
   if (values.length >= 8) {
-    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const mean = total / values.length;
     const sd = stdDev(values);
     const upper = mean + 2 * sd;
     const anomalies = values.filter(v => v > upper);
     if (anomalies.length > 0) {
       sections.push({
         title: "Anomaly Detection",
-        content: `${anomalies.length} anomalous order${anomalies.length === 1 ? "" : "s"} detected (>${fmt(upper)}). These represent unusual transactions that may indicate bulk orders, data errors, or exceptional opportunities.`,
+        content: `${anomalies.length} unusual ${prof.recordLabel.toLowerCase()} detected (>${prof.fmt(upper)}). These may indicate outliers, data entry errors, or exceptional cases worth investigating.`,
         type: "warning",
       });
-      recommendations.push("Flag high-value orders at checkout for review; investigate if anomalies represent data errors or genuine large orders.");
+      recommendations.push(`Review the ${anomalies.length} outlier${anomalies.length === 1 ? "" : "s"} to determine if they represent genuine cases or data errors.`);
     }
   }
 
   // ── Concentration Risk ──
-  if (regionField || productField) {
-    const dim = regionField || productField!;
-    const groups = groupBy(rows, metric, dim);
+  if (groupDimension) {
+    const groups = groupBy(rows, metric, groupDimension);
     const sorted = [...groups].map(([, g]) => g.total).sort((a, b) => b - a);
     const top3 = sorted.slice(0, 3).reduce((s, v) => s + v, 0);
     const top3Pct = total ? top3 / total : 0;
 
     if (top3Pct >= 0.7) {
-      warnings.push(`Top 3 ${dim}s account for ${(top3Pct * 100).toFixed(0)}% of revenue — high concentration risk.`);
-      recommendations.push(`Diversify revenue across ${dim}s to reduce dependency on top performers.`);
+      warnings.push(`Top 3 ${groupDimension}s account for ${(top3Pct * 100).toFixed(0)}% of ${metric.toLowerCase()} — high concentration risk.`);
+      recommendations.push(`Diversify across ${groupDimension}s to reduce dependency on top performers.`);
     }
   }
 
@@ -503,30 +601,45 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     });
     const topCombos = [...combos].sort((a, b) => b[1].total - a[1].total).slice(0, 5);
     if (topCombos.length) {
+      const recordWord = prof.recordLabel.toLowerCase();
       tables.push({
         title: "Top " + regionField + " x " + productField + " Combinations",
-        headers: ["Combination", "Revenue", "Orders"],
-        rows: topCombos.map(([key, g]) => [key, fmt(g.total), g.count.toLocaleString()]),
+        headers: ["Combination", metric, recordWord],
+        rows: topCombos.map(([key, g]) => [key, prof.fmt(g.total), g.count.toLocaleString()]),
       });
     }
   }
 
-  // ── Financial Impact Estimates ──
-  if (returnField && values.length > 0) {
-    const overallRR = returnRate(rows, returnField);
-    if (overallRR > 0.15) {
-      const savedIfImproved = total * (overallRR - 0.15);
-      sections.push({
-        title: "Financial Impact Estimate",
-        content: `Reducing returns from ${(overallRR * 100).toFixed(1)}% to 15% could recover approximately **${fmt(savedIfImproved)}** in annual revenue.`,
-        type: "recommendation",
-      });
+  // ── Dataset Type Recommendations ──
+  if (datasetType === "analytics") {
+    if (!recommendations.length) {
+      recommendations.push("Segment traffic by source/medium to identify highest-converting acquisition channels.");
+    }
+    recommendations.push("Correlate page views with conversion events to find the pages that drive the most value.");
+    recommendations.push("Track bounce rate and session duration alongside page views to assess engagement quality.");
+  } else if (datasetType === "ecommerce") {
+    if (!recommendations.length) {
+      recommendations.push("Upload a dataset with region, product, and date fields for richer analysis.");
+    }
+  } else if (datasetType === "hr") {
+    if (!recommendations.length) {
+      recommendations.push("Analyze attrition rates by department and tenure to identify retention risks.");
+    }
+    recommendations.push("Compare compensation across departments to ensure internal equity.");
+  } else if (datasetType === "financial") {
+    if (!recommendations.length) {
+      recommendations.push("Track period-over-period changes to identify emerging trends early.");
+    }
+    recommendations.push("Compare actuals against budget to flag variances for investigation.");
+  } else {
+    if (!recommendations.length) {
+      recommendations.push("Add more dimensions (region, category, date) for deeper segmented analysis.");
     }
   }
 
   // ── Final Recommendations ──
   if (recommendations.length === 0) {
-    recommendations.push("Upload a dataset with region, product, and date fields for richer analysis.");
+    recommendations.push("Upload a dataset with additional dimensions for richer analysis.");
   }
 
   const summary = sections.find(s => s.title === "Executive Summary")?.content || "";
@@ -540,4 +653,26 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     recommendations: recommendations.slice(0, 8),
     warnings,
   };
+}
+
+function returnRate(rows: Row[], returnField: string): number {
+  const flags = rows.map(r => num(r[returnField])).filter((v): v is number => v !== null);
+  if (!flags.length) return 0;
+  return flags.filter(v => v > 0).length / flags.length;
+}
+
+function groupReturnRate(rows: Row[], returnField: string, dimension: string): { label: string; rate: number; count: number }[] {
+  const groups = new Map<string, { returned: number; total: number }>();
+  rows.forEach(row => {
+    const r = num(row[returnField]);
+    if (r === null) return;
+    const key = String(row[dimension] ?? "Unknown");
+    const entry = groups.get(key) || { returned: 0, total: 0 };
+    entry.total++;
+    if (r > 0) entry.returned++;
+    groups.set(key, entry);
+  });
+  return [...groups]
+    .map(([label, g]) => ({ label, rate: g.total ? g.returned / g.total : 0, count: g.total }))
+    .sort((a, b) => b.rate - a.rate);
 }
