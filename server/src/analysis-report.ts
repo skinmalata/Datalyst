@@ -31,7 +31,7 @@ function pct(value: number): string {
   return (value * 100).toFixed(1) + "%";
 }
 
-function find(columns: string[], patterns: RegExp): string | undefined {
+function find(columns: string[], patterns: RegExp[]): string | undefined {
   return columns.find(c => patterns.some(p => p.test(c)));
 }
 
@@ -84,19 +84,19 @@ function groupReturnRate(rows: Row[], returnField: string, dimension: string): {
 }
 
 export function generateAnalysisReport(rows: Row[], columns: string[]): AnalysisReport {
-  const metric = find(columns, /total.?price|revenue|sales|amount|value|revenue/i)
+  const metric = find(columns, [/total.?price|revenue|sales|amount|value|revenue/i])
     || columns.find(c => rows.some(r => num(r[c]) !== null));
-  const dateField = find(columns, /date|order.?date|month|period|timestamp/i);
-  const regionField = find(columns, /region|country|market|territory|area|zone/i);
-  const productField = find(columns, /product|category|item|sku|line|type/i);
-  const returnField = find(columns, /returned|return.?flag|is.?return/i);
-  const discountField = find(columns, /discount/i);
-  const paymentField = find(columns, /payment|pay.?method|tender/i);
-  const customerTypeField = find(columns, /customer.?type|segment|client.?type/i);
-  const quantityField = find(columns, /quantity|qty|units?/i);
-  const storeField = find(columns, /store|location|shop|outlet|branch/i);
-  const salespersonField = find(columns, /salesperson|rep|agent|associate|employee|staff/i);
-  const shippingField = find(columns, /shipping|delivery.?cost|freight/i);
+  const dateField = find(columns, [/date|order.?date|month|period|timestamp/i]);
+  const regionField = find(columns, [/region|country|market|territory|area|zone/i]);
+  const productField = find(columns, [/product|category|item|sku|line|type/i]);
+  const returnField = find(columns, [/returned|return.?flag|is.?return/i]);
+  const discountField = find(columns, [/discount/i]);
+  const paymentField = find(columns, [/payment|pay.?method|tender/i]);
+  const customerTypeField = find(columns, [/customer.?type|segment|client.?type/i]);
+  const quantityField = find(columns, [/quantity|qty|units?/i]);
+  const storeField = find(columns, [/store|location|shop|outlet|branch/i]);
+  const salespersonField = find(columns, [/salesperson|rep|agent|associate|employee|staff/i]);
+  const shippingField = find(columns, [/shipping|delivery.?cost|freight/i]);
 
   if (!metric) {
     return {
@@ -143,7 +143,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (regionField) {
     const groups = groupBy(rows, metric, regionField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count,
+      label, revenue: g.total, count: g.count,
       aov: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
     })).sort((a, b) => b.revenue - a.revenue);
@@ -194,7 +194,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (productField) {
     const groups = groupBy(rows, metric, productField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count,
+      label, revenue: g.total, count: g.count,
       aov: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
     })).sort((a, b) => b.revenue - a.revenue);
@@ -248,7 +248,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     });
 
     const series = [...buckets].sort((a, b) => a[0].localeCompare(b[0])).map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count,
+      label, revenue: g.total, count: g.count,
     }));
 
     if (series.length >= 3) {
@@ -369,7 +369,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (paymentField) {
     const groups = groupBy(rows, metric, paymentField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count, aov: g.count ? g.total / g.count : 0,
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
     })).sort((a, b) => b.revenue - a.revenue);
 
     if (ranking.length >= 2) {
@@ -392,7 +392,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (customerTypeField) {
     const groups = groupBy(rows, metric, customerTypeField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count, aov: g.count ? g.total / g.count : 0,
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
       share: total ? g.total / total : 0,
     })).sort((a, b) => b.revenue - a.revenue);
 
@@ -409,7 +409,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (storeField) {
     const groups = groupBy(rows, metric, storeField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count, aov: g.count ? g.total / g.count : 0,
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
     })).sort((a, b) => b.revenue - a.revenue);
 
     if (ranking.length >= 2) {
@@ -425,7 +425,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   if (salespersonField) {
     const groups = groupBy(rows, metric, salespersonField);
     const ranking = [...groups].map(([label, g]) => ({
-      label, revenue: g.total, orders: g.count, aov: g.count ? g.total / g.count : 0,
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
     })).sort((a, b) => b.revenue - a.revenue);
 
     if (ranking.length >= 2) {
