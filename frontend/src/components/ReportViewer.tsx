@@ -1,7 +1,12 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStore } from "@/store/useStore";
 import { api } from "@/lib/api-client";
+import {
+  ReportBarChart, ReportHorizontalBar, ReportLineChart,
+  ReportDonut, ReportMultiLine, ReportRadar,
+  KpiCard, HeatmapTable, InsightCard,
+} from "./ReportCharts";
 
 type Kpi = { label: string; value: string; change?: string; positive?: boolean };
 type Section = { title: string; type: string; content: string };
@@ -20,10 +25,63 @@ function fmtMd(text: string) {
   return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
 }
 
+function parseMoney(s: string): number {
+  const clean = s.replace(/[$,%]/g, "").trim();
+  if (clean.endsWith("M")) return parseFloat(clean) * 1_000_000;
+  if (clean.endsWith("K")) return parseFloat(clean) * 1_000;
+  return parseFloat(clean) || 0;
+}
+
+function parsePct(s: string): number {
+  return parseFloat(s.replace("%", "")) || 0;
+}
+
+function tableHasRevenue(tbl: Table): boolean {
+  return tbl.headers.some(h => /revenue|total|amount|sales/i.test(h));
+}
+
+function tableIsMonthly(tbl: Table): boolean {
+  return /monthly|trend|over time/i.test(tbl.title);
+}
+
+function tableIsShare(tbl: Table): boolean {
+  return /share|composition|breakdown/i.test(tbl.title);
+}
+
+// Convert a "Revenue by X" table into bar chart data
+function tableToBarData(tbl: Table): { label: string; value: number }[] {
+  const labelIdx = 0;
+  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
+  if (valueIdx === -1) return [];
+  return tbl.rows.map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
+}
+
+// Convert monthly table into line chart data
+function tableToLineData(tbl: Table): { label: string; value: number }[] {
+  const labelIdx = 0;
+  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
+  if (valueIdx === -1) return [];
+  return tbl.rows.map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
+}
+
+// Extract share/donut data from a table with Share column
+function tableToDonutData(tbl: Table): { label: string; value: number }[] {
+  const labelIdx = 0;
+  const shareIdx = tbl.headers.findIndex(h => /share/i.test(h));
+  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
+  if (shareIdx !== -1) {
+    return tbl.rows.slice(0, 8).map(r => ({ label: r[labelIdx], value: parsePct(r[shareIdx]) })).filter(d => d.value > 0);
+  }
+  if (valueIdx !== -1) {
+    return tbl.rows.slice(0, 8).map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
+  }
+  return [];
+}
+
 type Props = { open: boolean; onClose: () => void };
 
 export function ReportViewer({ open, onClose }: Props) {
-  const { datasetId, rows, profile } = useStore();
+  const { datasetId, rows } = useStore();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -50,6 +108,37 @@ export function ReportViewer({ open, onClose }: Props) {
     }
   };
 
+  // Pre-compute chart data from tables
+  const charts = useMemo(() => {
+    if (!report) return { bar: [], donut: [], line: [], tablesWithoutChart: [] };
+
+    const bar: { title: string; data: { label: string; value: number }[] }[] = [];
+    const donut: { title: string; data: { label: string; value: number }[] }[] = [];
+    const line: { title: string; data: { label: string; value: number }[] }[] = [];
+    const tablesWithoutChart: Table[] = [];
+
+    report.tables.forEach(tbl => {
+      if (tableIsMonthly(tbl)) {
+        const d = tableToLineData(tbl);
+        if (d.length >= 2) { line.push({ title: tbl.title, data: d }); return; }
+      }
+      if (tableIsShare(tbl) || tableHasRevenue(tbl)) {
+        const d = tableToBarData(tbl);
+        if (d.length >= 2) {
+          if (d.length <= 6) { donut.push({ title: tbl.title.replace("Revenue by", "Share:"), data: tableToDonutData(tbl) }); }
+          bar.push({ title: tbl.title, data: d });
+          return;
+        }
+      }
+      // Fallback: try to extract bar data from any table with a numeric column
+      const d = tableToBarData(tbl);
+      if (d.length >= 2 && d.length <= 10) { bar.push({ title: tbl.title, data: d }); return; }
+      tablesWithoutChart.push(tbl);
+    });
+
+    return { bar, donut, line, tablesWithoutChart };
+  }, [report]);
+
   const close = () => {
     setVisible(false);
     setTimeout(onClose, 300);
@@ -63,79 +152,92 @@ export function ReportViewer({ open, onClose }: Props) {
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       }`}
     >
-      {/* Close button */}
-      <button
-        onClick={close}
-        className="fixed right-6 top-6 z-50 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-xl text-text-secondary hover:text-white"
-      >
-        ×
-      </button>
+      <button onClick={close} className="fixed right-6 top-6 z-50 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-xl text-text-secondary hover:text-white">×</button>
 
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-6 py-10">
         {loading ? (
           <div className="flex flex-col items-center py-20">
-            <div className="mb-4 h-10 w-10 animate-spin rounded-full border-3 border-border border-t-primary" />
+            <div className="mb-4 h-10 w-10 animate-spin rounded-full border-[3px] border-border border-t-primary" />
             <p className="text-sm text-text-muted">Analyzing your data across all dimensions...</p>
           </div>
         ) : report ? (
-          <div>
-            {/* Header */}
-            <div className="mb-8">
+          <div className="space-y-8">
+            {/* ── Report Header ── */}
+            <div>
               <p className="mb-2 text-xs font-bold tracking-widest text-primary">ANALYSIS REPORT</p>
               <h2 className="mb-3 text-2xl font-bold">{report.title}</h2>
               <p className="text-sm leading-relaxed text-text-secondary">{report.summary}</p>
-              <p className="mt-2 font-mono text-xs text-text-muted">
-                {rows.length.toLocaleString()} records · {Object.keys(rows[0] || {}).length} fields
-              </p>
+              <p className="mt-2 font-mono text-xs text-text-muted">{rows.length.toLocaleString()} records · {Object.keys(rows[0] || {}).length} fields</p>
             </div>
 
-            {/* KPIs */}
+            {/* ── KPI Grid ── */}
             {report.kpis.length > 0 && (
-              <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {report.kpis.map((kpi) => (
-                  <div key={kpi.label} className="rounded-xl border border-border bg-surface p-4 text-center">
-                    <p className="mb-2 text-[10px] font-bold tracking-wider text-text-muted">{kpi.label}</p>
-                    <p className={`text-xl font-bold ${kpi.positive === true ? "text-green-400" : kpi.positive === false ? "text-red-400" : "text-white"}`}>
-                      {kpi.value}
-                    </p>
-                    {kpi.change && <p className="mt-1 text-xs text-text-muted">{kpi.change}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Warnings */}
-            {report.warnings.length > 0 && (
-              <div className="mb-8 rounded-xl border border-amber-400/30 bg-amber-400/5 p-4">
-                <h3 className="mb-3 text-sm font-semibold text-amber-300">⚠ Risks to Investigate</h3>
-                {report.warnings.map((w, i) => (
-                  <p key={i} className="mb-2 text-sm leading-relaxed text-text-secondary last:mb-0">{w}</p>
-                ))}
-              </div>
-            )}
-
-            {/* Sections */}
-            {report.sections.map((sec, i) => {
-              if (sec.title === "Executive Summary") return null;
-              const icon = sec.type === "recommendation" ? "→" : sec.type === "warning" ? "⚠" : sec.type === "finding" ? "✦" : "·";
-              const borderColor = sec.type === "recommendation" ? "border-l-green-400" : sec.type === "warning" ? "border-l-amber-400" : "border-l-primary";
-              return (
-                <div key={i} className={`mb-5 rounded-xl border border-border border-l-4 ${borderColor} bg-surface p-4`}>
-                  <h3 className="mb-2 text-sm font-semibold">{icon} {sec.title}</h3>
-                  <div className="text-sm leading-relaxed text-text-secondary" dangerouslySetInnerHTML={{ __html: fmtMd(sec.content) }} />
+              <div>
+                <p className="mb-3 text-xs font-bold tracking-wider text-text-muted">KEY METRICS</p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {report.kpis.map(kpi => (
+                    <KpiCard key={kpi.label} label={kpi.label} value={kpi.value} change={kpi.change} positive={kpi.positive} />
+                  ))}
                 </div>
+              </div>
+            )}
+
+            {/* ── Warnings ── */}
+            {report.warnings.length > 0 && (
+              <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-5">
+                <p className="mb-3 text-sm font-semibold text-amber-300">⚠ Risks to Investigate</p>
+                <div className="space-y-2">
+                  {report.warnings.map((w, i) => (
+                    <InsightCard key={i} icon="⚠" title="Risk" detail={w} color="amber" />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Charts: Line (trends) ── */}
+            {charts.line.map((c, i) => (
+              <ReportLineChart key={`line-${i}`} data={c.data} title={c.title} />
+            ))}
+
+            {/* ── Charts: Bar + Donut side by side ── */}
+            {charts.bar.length > 0 && charts.donut.length > 0 ? (
+              <div className="grid gap-4 lg:grid-cols-5">
+                <div className="lg:col-span-3">
+                  <ReportBarChart data={charts.bar[0].data} title={charts.bar[0].title} />
+                </div>
+                <div className="lg:col-span-2">
+                  <ReportDonut data={charts.donut[0].data} title={charts.donut[0].title} />
+                </div>
+              </div>
+            ) : (
+              charts.bar.map((c, i) => (
+                <ReportBarChart key={`bar-${i}`} data={c.data} title={c.title} />
+              ))
+            )}
+
+            {/* ── Additional bar charts ── */}
+            {charts.bar.slice(1).map((c, i) => (
+              <ReportBarChart key={`bar-extra-${i}`} data={c.data} title={c.title} />
+            ))}
+
+            {/* ── Sections ── */}
+            {report.sections.filter(s => s.title !== "Executive Summary").map((sec, i) => {
+              const color = sec.type === "recommendation" ? "green" : sec.type === "warning" ? "amber" : sec.type === "finding" ? undefined : undefined;
+              const icon = sec.type === "recommendation" ? "→" : sec.type === "warning" ? "⚠" : sec.type === "finding" ? "✦" : "·";
+              return (
+                <InsightCard key={i} icon={icon} title={sec.title} detail={fmtMd(sec.content)} color={color} />
               );
             })}
 
-            {/* Tables */}
-            {report.tables.map((tbl, i) => (
-              <div key={i} className="mb-6">
+            {/* ── Remaining tables (no matching chart) ── */}
+            {charts.tablesWithoutChart.map((tbl, i) => (
+              <div key={`tbl-${i}`}>
                 <h3 className="mb-2 font-mono text-xs tracking-wider text-text-muted">{tbl.title}</h3>
                 <div className="overflow-x-auto rounded-xl border border-border">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        {tbl.headers.map((h) => (
+                        {tbl.headers.map(h => (
                           <th key={h} className="px-4 py-2 text-left font-mono text-[10px] tracking-wider text-text-muted uppercase">{h}</th>
                         ))}
                       </tr>
@@ -154,20 +256,20 @@ export function ReportViewer({ open, onClose }: Props) {
               </div>
             ))}
 
-            {/* Recommendations */}
+            {/* ── Recommendations ── */}
             {report.recommendations.length > 0 && (
-              <div className="mb-6 rounded-xl border border-green-400/20 bg-green-400/5 p-4">
-                <h3 className="mb-3 text-sm font-semibold text-green-400">→ Prioritized Recommendations</h3>
-                <ol className="list-decimal space-y-2 pl-5">
+              <div className="rounded-xl border border-green-400/20 bg-green-400/5 p-5">
+                <p className="mb-4 text-sm font-semibold text-green-400">→ Prioritized Recommendations</p>
+                <div className="space-y-2">
                   {report.recommendations.map((r, i) => (
-                    <li key={i} className="text-sm leading-relaxed text-text-secondary">{r}</li>
+                    <InsightCard key={i} icon={String(i + 1)} title={`Action ${i + 1}`} detail={r} color="green" />
                   ))}
-                </ol>
+                </div>
               </div>
             )}
 
-            {/* Footer */}
-            <div className="mt-8 border-t border-border pt-4 text-xs text-text-muted italic">
+            {/* ── Footer ── */}
+            <div className="border-t border-border pt-4 text-xs text-text-muted italic">
               Decision note: This report is based on recorded values in the uploaded dataset. Add cost, margin, and refund amounts to evaluate profitability rather than revenue alone.
             </div>
           </div>

@@ -626,6 +626,187 @@
     };
   }
 
+  // ── SVG Chart Generators ────────────────────────────────────────────────
+
+  var chartColors = ["#7982ff", "#4dd5a0", "#fbbf24", "#f87171", "#a78bfa", "#f472b6", "#2dd4bf", "#fb923c", "#60a5fa", "#22d3ee"];
+
+  function svgBarChart(data, width, height) {
+    if (!data.length) return "";
+    var w = width || 700, h = height || 220, pad = { top: 10, right: 10, bottom: 40, left: 60 };
+    var iw = w - pad.left - pad.right, ih = h - pad.top - pad.bottom;
+    var maxVal = Math.max.apply(null, data.map(function (d) { return d.value; }));
+    if (maxVal === 0) return "";
+    var barW = Math.min(50, (iw / data.length) * 0.7);
+    var gap = (iw - barW * data.length) / (data.length + 1);
+
+    var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:' + h + 'px">';
+    // Grid lines
+    for (var g = 0; g <= 4; g++) {
+      var gy = pad.top + ih - (ih * g / 4);
+      var gv = (maxVal * g / 4);
+      svg += '<line x1="' + pad.left + '" y1="' + gy + '" x2="' + (w - pad.right) + '" y2="' + gy + '" stroke="#1e2d45" stroke-dasharray="3 4"/>';
+      svg += '<text x="' + (pad.left - 8) + '" y="' + (gy + 4) + '" fill="#64748b" font-size="10" text-anchor="end" font-family="DM Mono,monospace">' + (gv >= 1e6 ? (gv/1e6).toFixed(1)+"M" : gv >= 1e3 ? (gv/1e3).toFixed(0)+"K" : gv.toFixed(0)) + '</text>';
+    }
+    // Bars
+    data.forEach(function (d, i) {
+      var x = pad.left + gap + i * (barW + gap);
+      var bh = (d.value / maxVal) * ih;
+      var y = pad.top + ih - bh;
+      var color = chartColors[i % chartColors.length];
+      svg += '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + bh + '" rx="4" fill="' + color + '" opacity="0.9"><animate attributeName="height" from="0" to="' + bh + '" dur="0.6s" fill="freeze"/><animate attributeName="y" from="' + (pad.top + ih) + '" to="' + y + '" dur="0.6s" fill="freeze"/></rect>';
+      // Label
+      var label = d.label.length > 12 ? d.label.slice(0, 10) + "…" : d.label;
+      svg += '<text x="' + (x + barW / 2) + '" y="' + (pad.top + ih + 16) + '" fill="#94a3b8" font-size="10" text-anchor="middle">' + label + '</text>';
+      // Value on top
+      svg += '<text x="' + (x + barW / 2) + '" y="' + (y - 5) + '" fill="#e2e8f0" font-size="10" text-anchor="middle" font-weight="600">' + (d.value >= 1e6 ? "$"+(d.value/1e6).toFixed(1)+"M" : d.value >= 1e3 ? "$"+(d.value/1e3).toFixed(0)+"K" : "$"+d.value.toFixed(0)) + '</text>';
+    });
+    svg += '</svg>';
+    return '<div class="report-chart-wrap"><svg-bar>' + svg + '</svg-bar></div>';
+  }
+
+  function svgLineChart(data, width, height) {
+    if (!data.length) return "";
+    var w = width || 700, h = height || 220, pad = { top: 15, right: 15, bottom: 35, left: 60 };
+    var iw = w - pad.left - pad.right, ih = h - pad.top - pad.bottom;
+    var maxVal = Math.max.apply(null, data.map(function (d) { return d.value; }));
+    var minVal = Math.min.apply(null, data.map(function (d) { return d.value; }));
+    var range = maxVal - minVal || 1;
+
+    var points = data.map(function (d, i) {
+      var x = pad.left + (i / (data.length - 1)) * iw;
+      var y = pad.top + ih - ((d.value - minVal) / range) * ih;
+      return { x: x, y: y, v: d.value, l: d.label };
+    });
+
+    var pathD = points.map(function (p, i) { return (i === 0 ? "M" : "L") + p.x.toFixed(1) + "," + p.y.toFixed(1); }).join(" ");
+    var areaD = pathD + " L" + points[points.length - 1].x + "," + (pad.top + ih) + " L" + points[0].x + "," + (pad.top + ih) + " Z";
+
+    var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:' + h + 'px">';
+    // Gradient
+    svg += '<defs><linearGradient id="areaFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#7982ff" stop-opacity="0.3"/><stop offset="100%" stop-color="#7982ff" stop-opacity="0"/></linearGradient></defs>';
+    // Grid
+    for (var g = 0; g <= 4; g++) {
+      var gy = pad.top + ih - (ih * g / 4);
+      var gv = minVal + range * g / 4;
+      svg += '<line x1="' + pad.left + '" y1="' + gy + '" x2="' + (w - pad.right) + '" y2="' + gy + '" stroke="#1e2d45" stroke-dasharray="3 4"/>';
+      svg += '<text x="' + (pad.left - 8) + '" y="' + (gy + 4) + '" fill="#64748b" font-size="10" text-anchor="end" font-family="DM Mono,monospace">' + (gv >= 1e6 ? (gv/1e6).toFixed(1)+"M" : gv >= 1e3 ? (gv/1e3).toFixed(0)+"K" : gv.toFixed(0)) + '</text>';
+    }
+    // Area
+    svg += '<path d="' + areaD + '" fill="url(#areaFill)"/>';
+    // Line
+    svg += '<path d="' + pathD + '" fill="none" stroke="#7982ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+    // Dots
+    points.forEach(function (p, i) {
+      svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="4" fill="#7982ff" stroke="#0a101d" stroke-width="2"/>';
+      if (i === points.length - 1) {
+        svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="6" fill="none" stroke="#7982ff" stroke-width="2" opacity="0.4"/>';
+      }
+    });
+    // X-axis labels
+    points.forEach(function (p) {
+      var label = p.l.length > 8 ? p.l.slice(0, 6) + "…" : p.l;
+      svg += '<text x="' + p.x + '" y="' + (pad.top + ih + 18) + '" fill="#94a3b8" font-size="9" text-anchor="middle">' + label + '</text>';
+    });
+    svg += '</svg>';
+    return '<div class="report-chart-wrap"><svg-line>' + svg + '</svg-line></div>';
+  }
+
+  function svgDonut(data, width, height) {
+    if (!data.length) return "";
+    var w = width || 300, h = height || 260;
+    var cx = w / 2, cy = h / 2, r = 80, inner = 50;
+    var total = data.reduce(function (s, d) { return s + d.value; }, 0);
+    if (total === 0) return "";
+
+    var svg = '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;max-width:' + w + 'px;height:' + h + 'px">';
+    var angle = -Math.PI / 2;
+
+    data.forEach(function (d, i) {
+      var slice = (d.value / total) * 2 * Math.PI;
+      var endAngle = angle + slice;
+      var largeArc = slice > Math.PI ? 1 : 0;
+
+      var x1 = cx + r * Math.cos(angle);
+      var y1 = cy + r * Math.sin(angle);
+      var x2 = cx + r * Math.cos(endAngle);
+      var y2 = cy + r * Math.sin(endAngle);
+      var ix1 = cx + inner * Math.cos(angle);
+      var iy1 = cy + inner * Math.sin(angle);
+      var ix2 = cx + inner * Math.cos(endAngle);
+      var iy2 = cy + inner * Math.sin(endAngle);
+
+      var path = 'M' + x1.toFixed(2) + ',' + y1.toFixed(2) +
+        ' A' + r + ',' + r + ' 0 ' + largeArc + ',1 ' + x2.toFixed(2) + ',' + y2.toFixed(2) +
+        ' L' + ix2.toFixed(2) + ',' + iy2.toFixed(2) +
+        ' A' + inner + ',' + inner + ' 0 ' + largeArc + ',0 ' + ix1.toFixed(2) + ',' + iy1.toFixed(2) + ' Z';
+
+      svg += '<path d="' + path + '" fill="' + chartColors[i % chartColors.length] + '" opacity="0.85"><animate attributeName="opacity" from="0" to="0.85" dur="0.5s" fill="freeze"/></path>';
+      angle = endAngle;
+    });
+
+    // Center text
+    svg += '<text x="' + cx + '" y="' + (cy - 4) + '" fill="#e2e8f0" font-size="16" font-weight="700" text-anchor="middle">' + data.length + '</text>';
+    svg += '<text x="' + cx + '" y="' + (cy + 12) + '" fill="#64748b" font-size="10" text-anchor="middle">segments</text>';
+
+    svg += '</svg>';
+
+    // Legend
+    var legend = '<div class="report-donut-legend">';
+    data.forEach(function (d, i) {
+      var pct = ((d.value / total) * 100).toFixed(1);
+      legend += '<div class="report-donut-item"><span class="report-donut-dot" style="background:' + chartColors[i % chartColors.length] + '"></span>';
+      legend += '<span class="report-donut-label">' + d.label + '</span>';
+      legend += '<span class="report-donut-pct">' + pct + '%</span></div>';
+    });
+    legend += '</div>';
+
+    return '<div class="report-chart-wrap report-donut-wrap">' + svg + legend + '</div>';
+  }
+
+  function svgHeatBar(value, max, color) {
+    var pct = max > 0 ? (value / max) * 100 : 0;
+    return '<div class="report-heat-bar"><div class="report-heat-fill" style="width:' + pct + '%;background:' + (color || '#7982ff') + '"></div></div>';
+  }
+
+  // ── Table-to-Chart helpers ─────────────────────────────────────────────
+
+  function tableToBarData(tbl) {
+    var labelIdx = 0;
+    var valueIdx = -1;
+    tbl.headers.forEach(function (h, i) { if (/revenue|total|amount|sales|value/i.test(h)) valueIdx = i; });
+    if (valueIdx === -1) return [];
+    return tbl.rows.map(function (r) {
+      var v = nv(r[valueIdx]);
+      return v !== null ? { label: r[labelIdx], value: v } : null;
+    }).filter(Boolean);
+  }
+
+  function tableToLineData(tbl) {
+    return tableToBarData(tbl);
+  }
+
+  function tableToDonutData(tbl) {
+    var labelIdx = 0;
+    var shareIdx = -1, valueIdx = -1;
+    tbl.headers.forEach(function (h, i) {
+      if (/share/i.test(h)) shareIdx = i;
+      if (/revenue|total|amount|sales|value/i.test(h)) valueIdx = i;
+    });
+    if (shareIdx !== -1) {
+      return tbl.rows.slice(0, 8).map(function (r) {
+        var v = parseFloat(r[shareIdx]) || 0;
+        return v > 0 ? { label: r[labelIdx], value: v } : null;
+      }).filter(Boolean);
+    }
+    if (valueIdx !== -1) {
+      return tbl.rows.slice(0, 8).map(function (r) {
+        var v = nv(r[valueIdx]);
+        return v !== null && v > 0 ? { label: r[labelIdx], value: v } : null;
+      }).filter(Boolean);
+    }
+    return [];
+  }
+
   // ── Report Renderer ──────────────────────────────────────────────────────
 
   function renderReport(report) {
@@ -641,8 +822,9 @@
     html += '<div class="report-meta">' + report.dataset.rows.toLocaleString() + ' records · ' + report.dataset.columns + ' fields</div>';
     html += '</div>';
 
-    // KPIs
+    // KPIs with progress bars
     if (report.kpis.length) {
+      html += '<p class="report-subhead">KEY METRICS</p>';
       html += '<div class="report-kpis">';
       report.kpis.forEach(function (kpi) {
         var cls = "report-kpi";
@@ -665,9 +847,56 @@
       html += '</div>';
     }
 
+    // ── Charts from tables ──
+    var chartTables = [];
+    var nonChartTables = [];
+
+    report.tables.forEach(function (tbl) {
+      var isMonthly = /monthly|trend|over time/i.test(tbl.title);
+      var hasRevenue = /revenue|total|amount|sales/i.test(tbl.title);
+      var isShare = /share|composition|breakdown/i.test(tbl.title);
+
+      if (isMonthly) {
+        var lineData = tableToLineData(tbl);
+        if (lineData.length >= 3) {
+          html += svgLineChart(lineData);
+          return;
+        }
+      }
+
+      if (hasRevenue || isShare) {
+        var barData = tableToBarData(tbl);
+        if (barData.length >= 2) {
+          if (barData.length <= 6) {
+            var donutData = tableToDonutData(tbl);
+            if (donutData.length >= 2) {
+              html += '<div class="report-chart-row">';
+              html += svgBarChart(barData);
+              html += svgDonut(donutData);
+              html += '</div>';
+            } else {
+              html += svgBarChart(barData);
+            }
+          } else {
+            html += svgBarChart(barData);
+          }
+          return;
+        }
+      }
+
+      // Fallback: try bar chart from any table with numeric data
+      var fallbackData = tableToBarData(tbl);
+      if (fallbackData.length >= 2 && fallbackData.length <= 10) {
+        html += svgBarChart(fallbackData);
+        return;
+      }
+
+      nonChartTables.push(tbl);
+    });
+
     // Sections
     report.sections.forEach(function (sec) {
-      if (sec.title === "Executive Summary") return; // already rendered
+      if (sec.title === "Executive Summary") return;
       var icon = sec.type === "recommendation" ? "→" : sec.type === "warning" ? "⚠" : sec.type === "finding" ? "✦" : "·";
       html += '<div class="report-section report-' + sec.type + '">';
       html += '<h3>' + icon + ' ' + sec.title + '</h3>';
@@ -675,8 +904,8 @@
       html += '</div>';
     });
 
-    // Tables
-    report.tables.forEach(function (tbl) {
+    // Remaining tables (no chart)
+    nonChartTables.forEach(function (tbl) {
       html += '<div class="report-table-wrap">';
       html += '<h3>' + tbl.title + '</h3>';
       html += '<div class="table-scroll"><table class="report-table">';
