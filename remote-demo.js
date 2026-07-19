@@ -140,6 +140,26 @@
 
   const parseFile = window.datalystParseFile;
 
+  const revealWorkspace = () => {
+    const landing = document.querySelector("#landingPage");
+    if (landing) landing.classList.add("hidden");
+    document.body.classList.add("workspace-mode");
+    location.hash = "workspace";
+
+    const actions = document.querySelector(".header-actions");
+    let reset = document.querySelector("#resetWorkspace");
+    if (!reset && actions) {
+      reset = document.createElement("button");
+      reset.id = "resetWorkspace";
+      reset.className = "team-button";
+      reset.textContent = "Reset workspace";
+      actions.prepend(reset);
+      reset.onclick = () => { location.href = location.pathname + "#workspace"; };
+    }
+  };
+
+  window.revealWorkspace = revealWorkspace;
+
   const metricHelp = (metric) => {
     if (/bounce.?rate/i.test(metric)) {
       return "Bounce rate is the share of visits where someone left without continuing to another page.";
@@ -268,7 +288,9 @@
 
         document.querySelector("#previewTitle").textContent = file;
         document.querySelector("#uploadModal").classList.add("hidden");
-        document.querySelector("#datasets").classList.remove("hidden");
+        document.querySelector("#datasets").classList.add("hidden");
+
+        document.querySelector(".command-card")?.scrollIntoView({ behavior: "smooth", block: "center" });
 
         state.datasetId = (
           await api("/api/datasets", {
@@ -281,11 +303,12 @@
           })
         ).id;
 
-        toast(
-          parsedFile.tableCount > 1
-            ? `Detected ${parsedFile.tableCount} report tables; using ${parsedFile.tableName}.`
-            : "Dataset uploaded to the live workspace."
-        );
+        toast("Data loaded. Use the analysis wizard or ask a question above.");
+
+        setTimeout(() => {
+          document.querySelector("#openWizard")?.click();
+        }, 800);
+
       } catch (error) {
         toast(
           error instanceof Error
@@ -364,6 +387,7 @@
     if (await state.client.isAuthenticated()) {
       state.token = await state.client.getTokenSilently();
       await ensureWorkspace();
+      revealWorkspace();
     }
 
     await setSessionLabel();

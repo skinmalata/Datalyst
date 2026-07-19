@@ -48,6 +48,7 @@
         if (!response.ok) throw new Error(body.error || "Onboarding failed.");
         setOrganizationId(body.organization.id);
         hideOnboarding();
+        if (typeof window.revealWorkspace === "function") window.revealWorkspace();
         if (typeof toast === "function") toast("Workspace created. You can now upload data and run analyses.");
       } catch (err) {
         if (typeof toast === "function") toast(err.message || "Could not create workspace.");
