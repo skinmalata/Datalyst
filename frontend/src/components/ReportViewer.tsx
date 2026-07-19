@@ -5,18 +5,20 @@ import { api } from "@/lib/api-client";
 import {
   ReportBarChart, ReportHorizontalBar, ReportLineChart,
   ReportDonut, ReportMultiLine, ReportRadar,
-  KpiCard, HeatmapTable, InsightCard,
+  KpiCard, HeatmapTable, InsightCard, ForecastChart,
 } from "./ReportCharts";
 
 type Kpi = { label: string; value: string; change?: string; positive?: boolean };
 type Section = { title: string; type: string; content: string };
 type Table = { title: string; headers: string[]; rows: string[][] };
+type ForecastPoint = { label: string; actual: number | null; forecast: number | null; isProjected: boolean };
 type Report = {
   title: string;
   summary: string;
   kpis: Kpi[];
   sections: Section[];
   tables: Table[];
+  forecast: ForecastPoint[];
   recommendations: string[];
   warnings: string[];
 };
@@ -140,11 +142,35 @@ function downloadReportHtml(report: Report, rowCount: number, colCount: number) 
 
   report.sections.forEach(sec => {
     if (sec.title === "Executive Summary") return;
+    if (sec.title === "Forecast") {
+      body += `<div class="section recommendation"><h3>📈 ${esc(sec.title)}</h3><div class="section-content">${md(sec.content)}</div></div>\n`;
+      return;
+    }
     const icon = sec.type === "recommendation" ? "→" : sec.type === "warning" ? "⚠" : sec.type === "finding" ? "✦" : "·";
     body += `<div class="section ${sec.type}"><h3>${icon} ${esc(sec.title)}</h3><div class="section-content">${md(sec.content)}</div></div>\n`;
   });
 
+  report.forecast?.forEach(tbl => {
+    if (tbl.actual === null) return;
+  });
+
   report.tables.forEach(tbl => {
+    if (tbl.title.startsWith("Forecast:")) {
+      body += `<h3>📈 ${esc(tbl.title)}</h3>\n<table><thead><tr>`;
+      tbl.headers.forEach(h => { body += `<th>${esc(h)}</th>`; });
+      body += `</tr></thead><tbody>`;
+      tbl.rows.forEach(row => {
+        body += `<tr>`;
+        row.forEach((c, ci) => {
+          const isProjected = row.at(-1) === "Projected";
+          const style = isProjected ? ' style="background:#fef3c7;font-weight:600;"' : ci === 0 ? ' style="font-weight:600;"' : '';
+          body += `<td${style}>${esc(c)}</td>`;
+        });
+        body += `</tr>`;
+      });
+      body += `</tbody></table>\n`;
+      return;
+    }
     body += `<h3>${esc(tbl.title)}</h3>\n<table><thead><tr>`;
     tbl.headers.forEach(h => { body += `<th>${esc(h)}</th>`; });
     body += `</tr></thead><tbody>`;
@@ -310,6 +336,11 @@ export function ReportViewer({ open, onClose }: Props) {
             {charts.line.map((c, i) => (
               <ReportLineChart key={`line-${i}`} data={c.data} title={c.title} />
             ))}
+
+            {/* ── Forecast Chart ── */}
+            {report.forecast.length > 0 && (
+              <ForecastChart data={report.forecast} title="Forecast & Projection" />
+            )}
 
             {/* ── Charts: Bar + Donut side by side ── */}
             {charts.bar.length > 0 && charts.donut.length > 0 ? (

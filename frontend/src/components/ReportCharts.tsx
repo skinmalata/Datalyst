@@ -241,3 +241,58 @@ export function InsightCard({ icon, title, detail, color }: { icon: string; titl
     </div>
   );
 }
+
+// ── Forecast Chart ──────────────────────────────────────────────────────
+type ForecastPoint = { label: string; actual: number | null; forecast: number | null; isProjected: boolean };
+
+export function ForecastChart({ data, title }: { data: ForecastPoint[]; title: string }) {
+  if (!data.length) return null;
+
+  const chartData = data.map(d => ({
+    label: d.label,
+    Actual: d.actual,
+    Forecast: d.forecast,
+    Projected: d.isProjected ? d.forecast : null,
+  }));
+
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <h3 className="mb-4 font-mono text-xs tracking-wider text-text-muted">{title}</h3>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <defs>
+              <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#6366F1" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#6366F1" stopOpacity={0.05} />
+              </linearGradient>
+              <linearGradient id="projectedGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#F59E0B" stopOpacity={0.3} />
+                <stop offset="100%" stopColor="#F59E0B" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} width={50} />
+            <Tooltip
+              contentStyle={{ background: "#111d31", border: "1px solid #283952", borderRadius: 8, fontSize: 12, color: "#e1e9f4" }}
+              labelStyle={{ color: "#94a3b8", marginBottom: 4 }}
+              formatter={(value: unknown, name: string) => {
+                const n = typeof value === "number" ? value : parseFloat(String(value));
+                return [!isNaN(n) ? n.toLocaleString() : "—", name];
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
+            <Area type="monotone" dataKey="Actual" stroke="#6366F1" strokeWidth={2} fill="url(#forecastGrad)" dot={{ r: 3, fill: "#6366F1" }} connectNulls={false} />
+            <Area type="monotone" dataKey="Forecast" stroke="#10b981" strokeWidth={2} strokeDasharray="6 3" fill="none" dot={{ r: 3, fill: "#10b981" }} connectNulls={false} />
+            <Area type="monotone" dataKey="Projected" stroke="#F59E0B" strokeWidth={2} strokeDasharray="4 4" fill="url(#projectedGrad)" dot={{ r: 4, fill: "#F59E0B", strokeWidth: 2, stroke: "#111d31" }} connectNulls={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 flex items-center gap-4 text-[11px] text-text-muted">
+        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-4 rounded bg-primary" /> Actual</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-4 rounded bg-green-400" style={{ borderStyle: "dashed" }} /> Regression Fit</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block h-0.5 w-4 rounded bg-amber-400" style={{ borderStyle: "dashed" }} /> Projected</span>
+      </div>
+    </div>
+  );
+}

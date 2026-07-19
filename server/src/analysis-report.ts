@@ -6,12 +6,20 @@ export type ReportSection = {
   type: "kpi" | "table" | "text" | "recommendation" | "warning" | "finding";
 };
 
+export type ForecastPoint = {
+  label: string;
+  actual: number | null;
+  forecast: number | null;
+  isProjected: boolean;
+};
+
 export type AnalysisReport = {
   title: string;
   summary: string;
   sections: ReportSection[];
   kpis: Array<{ label: string; value: string; change?: string; positive?: boolean }>;
   tables: Array<{ title: string; headers: string[]; rows: string[][] }>;
+  forecast: ForecastPoint[];
   recommendations: string[];
   warnings: string[];
 };
@@ -61,6 +69,57 @@ function median(values: number[]): number {
 function stdDev(values: number[]): number {
   const mean = values.reduce((s, v) => s + v, 0) / values.length;
   return Math.sqrt(values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length);
+}
+
+function linearRegression(values: number[]): { slope: number; intercept: number; r2: number } {
+  const n = values.length;
+  if (n < 2) return { slope: 0, intercept: values[0] ?? 0, r2: 0 };
+  let sx = 0, sy = 0, sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) {
+    sx += i; sy += values[i]; sxx += i * i; sxy += i * values[i];
+  }
+  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  const intercept = (sy - slope * sx) / n;
+  const mean = sy / n;
+  let ssTot = 0, ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    const predicted = intercept + slope * i;
+    ssTot += (values[i] - mean) ** 2;
+    ssRes += (values[i] - predicted) ** 2;
+  }
+  const r2 = ssTot === 0 ? 0 : 1 - ssRes / ssTot;
+  return { slope, intercept, r2 };
+}
+
+function forecastNextMonths(series: { label: string; total: number }[], count: number): ForecastPoint[] {
+  const values = series.map(s => s.total);
+  const { slope, intercept, r2 } = linearRegression(values);
+
+  const projected: ForecastPoint[] = series.map((s, i) => ({
+    label: s.label,
+    actual: s.total,
+    forecast: Math.round(intercept + slope * i),
+    isProjected: false,
+  }));
+
+  const lastLabel = series.at(-1)?.label || "";
+  const [yearStr, monthStr] = lastLabel.split("-");
+  let year = parseInt(yearStr, 10);
+  let month = parseInt(monthStr, 10);
+
+  for (let i = 1; i <= count; i++) {
+    month++;
+    if (month > 12) { month = 1; year++; }
+    const idx = values.length + i - 1;
+    projected.push({
+      label: year + "-" + String(month).padStart(2, "0"),
+      actual: null,
+      forecast: Math.round(intercept + slope * idx),
+      isProjected: true,
+    });
+  }
+
+  return projected;
 }
 
 function groupBy(rows: Row[], field: string, dimension: string): Map<string, { total: number; count: number; values: number[] }> {
@@ -187,6 +246,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
       sections: [],
       kpis: [],
       tables: [],
+      forecast: [],
       recommendations: [],
       warnings: ["No numeric measure found. Upload a dataset with at least one numeric column."],
     };
@@ -219,6 +279,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
   const tables: AnalysisReport["tables"] = [];
   const recommendations: string[] = [];
   const warnings: string[] = [];
+  let forecastData: ForecastPoint[] = [];
 
   const summaryParts: string[] = [];
   summaryParts.push(`**${prof.fmt(total)}** in ${metric} across **${values.length.toLocaleString()}** ${prof.recordLabel.toLowerCase()}`);
@@ -401,6 +462,53 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     if (years.length >= 2) {
       const yoyGrowth = ((years[1][1] - years[0][1]) / years[0][1]) * 100;
       kpis.push({ label: "YOY GROWTH", value: yoyGrowth.toFixed(1) + "%", positive: yoyGrowth > 0 });
+    }
+
+    // ── Forecast ──
+    if (series.length >= 3) {
+      const forecastCount = Math.min(6, Math.max(3, Math.floor(series.length / 3)));
+      forecastData = forecastNextMonths(series, forecastCount);
+
+      const { slope, r2 } = linearRegression(series.map(s => s.total));
+      const lastActual = series.at(-1)!.total;
+      const nextForecast = forecastData.find(f => f.isProjected);
+      const projectedValue = nextForecast?.forecast ?? 0;
+      const monthlyGrowthRate = lastActual > 0 ? ((projectedValue - lastActual) / lastActual) * 100 : 0;
+
+      const forecastConfidence = r2 >= 0.7 ? "high" : r2 >= 0.4 ? "moderate" : "low";
+
+      kpis.push({
+        label: "NEXT PERIOD FORECAST",
+        value: prof.fmt(projectedValue),
+        change: (monthlyGrowthRate >= 0 ? "+" : "") + monthlyGrowthRate.toFixed(1) + "% vs current",
+        positive: monthlyGrowthRate > 0,
+      });
+
+      const slopeDir = slope > 0 ? "upward" : slope < 0 ? "downward" : "flat";
+      const forecastDesc = `Linear regression on ${series.length} months of data shows a ${slopeDir} trend (R² = ${r2.toFixed(2)}, ${forecastConfidence} confidence). Projected next-period ${metric}: **${prof.fmt(projectedValue)}** (${monthlyGrowthRate >= 0 ? "+" : ""}${monthlyGrowthRate.toFixed(1)}% vs current).`;
+      sections.push({ title: "Forecast", content: forecastDesc, type: "recommendation" });
+
+      tables.push({
+        title: "Forecast: " + metric,
+        headers: ["Month", "Actual", "Forecast", "Status"],
+        rows: forecastData.map(f => [
+          f.label,
+          f.actual !== null ? prof.fmt(f.actual) : "—",
+          f.forecast !== null ? prof.fmt(f.forecast) : "—",
+          f.isProjected ? "Projected" : "Actual",
+        ]),
+      });
+
+      if (slope < 0) {
+        warnings.push(`Forecast projects continued decline. Without intervention, ${metric.toLowerCase()} could fall to ${prof.fmt(projectedValue)} next period.`);
+        recommendations.push(`Address the declining trend immediately — identify and act on the top 3 drivers of the downturn.`);
+      } else if (slope > 0 && r2 >= 0.5) {
+        recommendations.push(`The upward trend is statistically reliable (R² = ${r2.toFixed(2)}). Scale what's working and set targets based on the projected trajectory.`);
+      }
+
+      if (forecastConfidence === "low") {
+        warnings.push(`Forecast confidence is low (R² = ${r2.toFixed(2)}). High volatility means projections should be treated as directional, not precise.`);
+      }
     }
   }
 
@@ -650,6 +758,7 @@ export function generateAnalysisReport(rows: Row[], columns: string[]): Analysis
     sections,
     kpis,
     tables,
+    forecast: forecastData,
     recommendations: recommendations.slice(0, 8),
     warnings,
   };
