@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useStore } from "@/store/useStore";
 import { api } from "@/lib/api-client";
 import {
@@ -48,7 +48,6 @@ function tableIsShare(tbl: Table): boolean {
   return /share|composition|breakdown/i.test(tbl.title);
 }
 
-// Convert a "Revenue by X" table into bar chart data
 function tableToBarData(tbl: Table): { label: string; value: number }[] {
   const labelIdx = 0;
   const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
@@ -56,15 +55,10 @@ function tableToBarData(tbl: Table): { label: string; value: number }[] {
   return tbl.rows.map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
 }
 
-// Convert monthly table into line chart data
 function tableToLineData(tbl: Table): { label: string; value: number }[] {
-  const labelIdx = 0;
-  const valueIdx = tbl.headers.findIndex(h => /revenue|total|amount|sales|value/i.test(h));
-  if (valueIdx === -1) return [];
-  return tbl.rows.map(r => ({ label: r[labelIdx], value: parseMoney(r[valueIdx]) })).filter(d => d.value > 0);
+  return tableToBarData(tbl);
 }
 
-// Extract share/donut data from a table with Share column
 function tableToDonutData(tbl: Table): { label: string; value: number }[] {
   const labelIdx = 0;
   const shareIdx = tbl.headers.findIndex(h => /share/i.test(h));
@@ -78,13 +72,461 @@ function tableToDonutData(tbl: Table): { label: string; value: number }[] {
   return [];
 }
 
+// ── Client-side report generator ────────────────────────────────────────
+
+function num(v: unknown): number | null {
+  const n = Number(String(v ?? "").trim().replace(/[$,%\s]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function fmtMoney(v: number): string {
+  if (Math.abs(v) >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
+  if (Math.abs(v) >= 1e3) return "$" + (v / 1e3).toFixed(1) + "K";
+  return "$" + v.toFixed(0);
+}
+
+function median(vals: number[]): number {
+  const s = [...vals].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function stdDev(vals: number[]): number {
+  const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+  return Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
+}
+
+function generateLocalReport(rows: Record<string, unknown>[]): Report {
+  const columns = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  const find = (p: RegExp) => columns.find(c => p.test(c));
+
+  const metricField = find(/total.?price|revenue|sales|amount|value/)
+    || columns.find(c => rows.some(r => num(r[c]) !== null));
+  const dateField = find(/date|order.?date|month|period/);
+  const regionField = find(/region|country|market|territory/);
+  const productField = find(/product|category|item|sku|line|type/);
+  const returnField = find(/returned|return.?flag|is.?return/);
+  const discountField = find(/discount/i);
+  const paymentField = find(/payment|pay.?method/);
+  const customerTypeField = find(/customer.?type|segment/);
+  const storeField = find(/store|location|shop|outlet/);
+  const salespersonField = find(/salesperson|rep|agent|employee|staff/);
+  const shippingField = find(/shipping|delivery.?cost|freight/);
+  const quantityField = find(/quantity|qty|units?/);
+
+  if (!metricField) {
+    return {
+      title: "Data Analysis Report",
+      summary: "No numeric measure detected. Add a sales, revenue, or amount column for analysis.",
+      sections: [], kpis: [], tables: [], recommendations: [], warnings: ["No numeric measure detected."],
+    };
+  }
+
+  const values = rows.map(r => num(r[metricField])).filter((v): v is number => v !== null);
+  const total = values.reduce((s, v) => s + v, 0);
+  const avg = values.length ? total / values.length : 0;
+  const med = median(values);
+
+  const kpis: Kpi[] = [
+    { label: "TOTAL " + metricField.toUpperCase(), value: fmtMoney(total) },
+    { label: "RECORDS", value: values.length.toLocaleString() },
+    { label: "AVG ORDER VALUE", value: fmtMoney(avg) },
+    { label: "MEDIAN ORDER", value: fmtMoney(med) },
+  ];
+
+  const sections: Section[] = [];
+  const tables: Table[] = [];
+  const recommendations: string[] = [];
+  const warnings: string[] = [];
+
+  sections.push({
+    title: "Executive Summary",
+    content: `**${fmtMoney(total)}** in ${metricField} across **${values.length.toLocaleString()}** records with an average order value of **${fmtMoney(avg)}**.`,
+    type: "text",
+  });
+
+  // Regional
+  if (regionField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[regionField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+      share: total ? g.total / total : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      const leader = ranking[0], weakest = ranking.at(-1)!;
+      kpis.push({ label: "TOP " + regionField.toUpperCase(), value: leader.label, change: (leader.share * 100).toFixed(1) + "% share" });
+      sections.push({
+        title: "Regional Performance",
+        content: `**${leader.label}** leads with **${fmtMoney(leader.revenue)}** (${(leader.share * 100).toFixed(1)}% share) and AOV of **${fmtMoney(leader.aov)}**. **${weakest.label}** trails at **${fmtMoney(weakest.revenue)}**.`,
+        type: "finding",
+      });
+      tables.push({
+        title: "Revenue by " + regionField,
+        headers: [regionField, "Revenue", "Share", "Orders", "AOV"],
+        rows: ranking.map(r => [r.label, fmtMoney(r.revenue), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), fmtMoney(r.aov)]),
+      });
+      recommendations.push(`Replicate ${leader.label}'s approach (highest AOV: ${fmtMoney(leader.aov)}) across underperforming regions.`);
+    }
+  }
+
+  // Product
+  if (productField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[productField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+      share: total ? g.total / total : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      const leader = ranking[0], weakest = ranking.at(-1)!;
+      sections.push({
+        title: "Product Performance",
+        content: `**${leader.label}** is top at **${fmtMoney(leader.revenue)}** (${(leader.share * 100).toFixed(1)}%). **${weakest.label}** generates the least at **${fmtMoney(weakest.revenue)}**.`,
+        type: "finding",
+      });
+      tables.push({
+        title: "Revenue by " + productField,
+        headers: [productField, "Revenue", "Share", "Orders", "AOV"],
+        rows: ranking.map(r => [r.label, fmtMoney(r.revenue), (r.share * 100).toFixed(1) + "%", r.count.toLocaleString(), fmtMoney(r.aov)]),
+      });
+    }
+  }
+
+  // Time series
+  if (dateField) {
+    const buckets = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const d = new Date(String(r[dateField] ?? ""));
+      const v = num(r[metricField]);
+      if (Number.isNaN(d.getTime()) || v === null) return;
+      const key = d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0");
+      const e = buckets.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; buckets.set(key, e);
+    });
+    const series = Array.from(buckets).sort((a, b) => a[0].localeCompare(b[0])).map(([label, g]) => ({
+      label, revenue: g.total, orders: g.count,
+    }));
+
+    if (series.length >= 3) {
+      const revs = series.map(s => s.revenue);
+      const changes: number[] = [];
+      for (let i = 1; i < revs.length; i++) changes.push(revs[i] - revs[i - 1]);
+      const positive = changes.filter(c => c > 0).length;
+      const consistency = (positive / changes.length) * 100;
+      const trendDesc = consistency >= 75
+        ? `Strong upward momentum — ${consistency.toFixed(0)}% of periods showed growth.`
+        : consistency <= 25
+        ? `Persistent decline — ${(100 - consistency).toFixed(0)}% of periods showed decrease.`
+        : `Mixed momentum — ${positive} up periods and ${changes.length - positive} down periods.`;
+
+      sections.push({ title: "Trend Analysis", content: trendDesc, type: "finding" });
+      tables.push({
+        title: "Monthly " + metricField,
+        headers: ["Month", "Revenue", "Orders"],
+        rows: series.slice(-12).map(s => [s.label, fmtMoney(s.revenue), s.orders.toLocaleString()]),
+      });
+    }
+  }
+
+  // Discount
+  if (discountField) {
+    const discVals = rows.map(r => num(r[discountField])).filter((v): v is number => v !== null);
+    if (discVals.length) {
+      const avgDisc = discVals.reduce((s, v) => s + v, 0) / discVals.length;
+      kpis.push({ label: "AVG DISCOUNT", value: (avgDisc <= 1 ? avgDisc * 100 : avgDisc).toFixed(1) + "%" });
+    }
+  }
+
+  // Returns
+  if (returnField) {
+    const flags = rows.map(r => num(r[returnField])).filter((v): v is number => v !== null);
+    if (flags.length) {
+      const rr = flags.filter(v => v > 0).length / flags.length;
+      kpis.push({ label: "RETURN RATE", value: (rr * 100).toFixed(1) + "%", positive: rr < 0.15 });
+      if (rr > 0.2) {
+        warnings.push(`Overall return rate of ${(rr * 100).toFixed(1)}% is above industry norms. This is a major margin leak.`);
+        recommendations.push("Prioritize a return-reduction initiative: audit return reasons and root causes.");
+      }
+    }
+  }
+
+  // Payment
+  if (paymentField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[paymentField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      tables.push({
+        title: "Revenue by " + paymentField,
+        headers: [paymentField, "Revenue", "Orders", "AOV"],
+        rows: ranking.map(r => [r.label, fmtMoney(r.revenue), r.count.toLocaleString(), fmtMoney(r.aov)]),
+      });
+    }
+  }
+
+  // Customer type
+  if (customerTypeField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[customerTypeField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, share: total ? g.total / total : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      sections.push({
+        title: "Customer Segment Analysis",
+        content: ranking.map(r => `**${r.label}**: ${fmtMoney(r.revenue)} (${(r.share * 100).toFixed(1)}%), ${r.count.toLocaleString()} orders`).join("; ") + ".",
+        type: "finding",
+      });
+    }
+  }
+
+  // Store
+  if (storeField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[storeField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      tables.push({
+        title: "Revenue by " + storeField,
+        headers: [storeField, "Revenue", "Orders", "AOV"],
+        rows: ranking.map(r => [r.label, fmtMoney(r.revenue), r.count.toLocaleString(), fmtMoney(r.aov)]),
+      });
+    }
+  }
+
+  // Salesperson
+  if (salespersonField) {
+    const groups = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[salespersonField] ?? "Unknown");
+      const e = groups.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; groups.set(key, e);
+    });
+    const ranking = Array.from(groups).map(([label, g]) => ({
+      label, revenue: g.total, count: g.count, aov: g.count ? g.total / g.count : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    if (ranking.length >= 2) {
+      const leader = ranking[0], weakest = ranking.at(-1)!;
+      kpis.push({ label: "TOP " + salespersonField.toUpperCase(), value: leader.label, change: fmtMoney(leader.revenue) });
+      sections.push({
+        title: "Salesperson Performance",
+        content: `**${leader.label}** leads with **${fmtMoney(leader.revenue)}** across ${leader.count} orders. **${weakest.label}** trails at **${fmtMoney(weakest.revenue)}**.`,
+        type: "finding",
+      });
+    }
+  }
+
+  // Shipping
+  if (shippingField) {
+    const shipVals = rows.map(r => num(r[shippingField])).filter((v): v is number => v !== null);
+    if (shipVals.length) {
+      const avgShip = shipVals.reduce((s, v) => s + v, 0) / shipVals.length;
+      kpis.push({ label: "AVG SHIPPING", value: "$" + avgShip.toFixed(2) });
+    }
+  }
+
+  // Anomalies
+  if (values.length >= 8) {
+    const mean = values.reduce((s, v) => s + v, 0) / values.length;
+    const sd = stdDev(values);
+    const upper = mean + 2 * sd;
+    const anomalies = values.filter(v => v > upper);
+    if (anomalies.length > 0) {
+      sections.push({
+        title: "Anomaly Detection",
+        content: `${anomalies.length} anomalous order${anomalies.length === 1 ? "" : "s"} detected (>${fmtMoney(upper)}). These represent unusual transactions.`,
+        type: "warning",
+      });
+    }
+  }
+
+  // Cross-dimensional
+  if (regionField && productField) {
+    const combos = new Map<string, { total: number; count: number }>();
+    rows.forEach(r => {
+      const v = num(r[metricField]); if (v === null) return;
+      const key = String(r[regionField] ?? "?") + " | " + String(r[productField] ?? "?");
+      const e = combos.get(key) || { total: 0, count: 0 };
+      e.total += v; e.count++; combos.set(key, e);
+    });
+    const topCombos = Array.from(combos).sort((a, b) => b[1].total - a[1].total).slice(0, 5);
+    if (topCombos.length) {
+      tables.push({
+        title: "Top " + regionField + " x " + productField + " Combinations",
+        headers: ["Combination", "Revenue", "Orders"],
+        rows: topCombos.map(([key, g]) => [key, fmtMoney(g.total), g.count.toLocaleString()]),
+      });
+    }
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push("Upload a dataset with region, product, and date fields for richer analysis.");
+  }
+
+  const summary = sections.find(s => s.title === "Executive Summary")?.content || "";
+
+  return {
+    title: "Comprehensive Data Analysis Report",
+    summary,
+    sections,
+    kpis,
+    tables,
+    recommendations: recommendations.slice(0, 8),
+    warnings,
+  };
+}
+
+// ── HTML Report Export ──────────────────────────────────────────────────
+
+function downloadReportHtml(report: Report, rowCount: number, colCount: number) {
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const md = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+  const now = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+  let css = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #fff; color: #1a1a2e; line-height: 1.6; padding: 2rem; max-width: 960px; margin: 0 auto; }
+    .eyebrow { font-size: 0.65rem; letter-spacing: 0.12em; color: #7982ff; font-weight: 700; text-transform: uppercase; margin-bottom: 0.5rem; }
+    h1 { font-size: 1.8rem; font-weight: 800; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.1rem; font-weight: 700; margin: 2rem 0 0.75rem; color: #1a1a2e; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.4rem; }
+    h3 { font-size: 0.95rem; font-weight: 600; margin: 1.5rem 0 0.5rem; }
+    .meta { font-size: 0.8rem; color: #64748b; margin-bottom: 1.5rem; }
+    .summary { font-size: 0.95rem; color: #475569; margin-bottom: 2rem; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .kpi { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; text-align: center; }
+    .kpi small { display: block; font-size: 0.65rem; letter-spacing: 0.08em; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 0.3rem; }
+    .kpi strong { display: block; font-size: 1.3rem; font-weight: 700; }
+    .kpi .change { display: block; font-size: 0.75rem; color: #64748b; margin-top: 0.15rem; }
+    .warnings { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+    .warnings h3 { color: #b45309; margin-top: 0; }
+    .warning-item { font-size: 0.88rem; color: #92400e; padding: 0.4rem 0; border-bottom: 1px solid #fde68a; }
+    .warning-item:last-child { border-bottom: none; }
+    .section { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
+    .section.finding { border-left: 3px solid #7982ff; }
+    .section.recommendation { border-left: 3px solid #10b981; }
+    .section.warning { border-left: 3px solid #f59e0b; }
+    .section-content { font-size: 0.9rem; color: #475569; }
+    .section-content strong { color: #1a1a2e; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    th { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 2px solid #e2e8f0; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }
+    td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
+    tbody tr:first-child td { font-weight: 600; }
+    tbody tr:hover { background: #f1f5f9; }
+    .recs { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+    .recs h3 { color: #166534; margin-top: 0; }
+    .recs ol { padding-left: 1.25rem; }
+    .recs li { font-size: 0.88rem; color: #475569; margin-bottom: 0.4rem; }
+    .footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #94a3b8; font-style: italic; }
+    @media print { body { padding: 0; } }
+  `;
+
+  let body = "";
+  body += `<p class="eyebrow">ANALYSIS REPORT</p>\n`;
+  body += `<h1>${esc(report.title)}</h1>\n`;
+  body += `<p class="summary">${md(report.summary)}</p>\n`;
+  body += `<p class="meta">${rowCount.toLocaleString()} records · ${colCount} fields · Generated ${now}</p>\n`;
+
+  if (report.kpis.length) {
+    body += `<h2>Key Metrics</h2>\n<div class="kpis">`;
+    report.kpis.forEach(k => {
+      body += `<div class="kpi"><small>${esc(k.label)}</small><strong>${esc(k.value)}</strong>`;
+      if (k.change) body += `<span class="change">${esc(k.change)}</span>`;
+      body += `</div>`;
+    });
+    body += `</div>\n`;
+  }
+
+  if (report.warnings.length) {
+    body += `<div class="warnings"><h3>⚠ Risks to Investigate</h3>`;
+    report.warnings.forEach(w => { body += `<div class="warning-item">${md(w)}</div>`; });
+    body += `</div>\n`;
+  }
+
+  report.sections.forEach(sec => {
+    if (sec.title === "Executive Summary") return;
+    const icon = sec.type === "recommendation" ? "→" : sec.type === "warning" ? "⚠" : sec.type === "finding" ? "✦" : "·";
+    body += `<div class="section ${sec.type}"><h3>${icon} ${esc(sec.title)}</h3><div class="section-content">${md(sec.content)}</div></div>\n`;
+  });
+
+  report.tables.forEach(tbl => {
+    body += `<h3>${esc(tbl.title)}</h3>\n<table><thead><tr>`;
+    tbl.headers.forEach(h => { body += `<th>${esc(h)}</th>`; });
+    body += `</tr></thead><tbody>`;
+    tbl.rows.forEach(row => {
+      body += `<tr>`;
+      row.forEach(c => { body += `<td>${esc(c)}</td>`; });
+      body += `</tr>`;
+    });
+    body += `</tbody></table>\n`;
+  });
+
+  if (report.recommendations.length) {
+    body += `<div class="recs"><h3>→ Prioritized Recommendations</h3><ol>`;
+    report.recommendations.forEach(r => { body += `<li>${md(r)}</li>`; });
+    body += `</ol></div>\n`;
+  }
+
+  body += `<div class="footer">Decision note: This report is based on recorded values in the uploaded dataset. Add cost, margin, and refund amounts to evaluate profitability rather than revenue alone.</div>\n`;
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(report.title)} — Datalyst</title><style>${css}</style></head><body>${body}</body></html>`;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `datalyst-report-${new Date().toISOString().slice(0, 10)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 type Props = { open: boolean; onClose: () => void };
 
 export function ReportViewer({ open, onClose }: Props) {
   const { datasetId, rows } = useStore();
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -96,19 +538,29 @@ export function ReportViewer({ open, onClose }: Props) {
   }, [open]);
 
   const fetchReport = async () => {
-    if (!datasetId) return;
+    if (!datasetId) { setError("No dataset loaded. Upload data first."); return; }
     setLoading(true);
+    setError(null);
     try {
       const data = await api<Report>(`/api/datasets/${datasetId}/report`);
       setReport(data);
     } catch {
-      setReport(null);
+      if (rows.length > 0) {
+        setReport(generateLocalReport(rows));
+      } else {
+        setError("Report generation failed and no local data available.");
+        setReport(null);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Pre-compute chart data from tables
+  const handleDownload = () => {
+    if (!report) return;
+    downloadReportHtml(report, rows.length, Object.keys(rows[0] || {}).length);
+  };
+
   const charts = useMemo(() => {
     if (!report) return { bar: [], donut: [], line: [], tablesWithoutChart: [] };
 
@@ -130,7 +582,6 @@ export function ReportViewer({ open, onClose }: Props) {
           return;
         }
       }
-      // Fallback: try to extract bar data from any table with a numeric column
       const d = tableToBarData(tbl);
       if (d.length >= 2 && d.length <= 10) { bar.push({ title: tbl.title, data: d }); return; }
       tablesWithoutChart.push(tbl);
@@ -138,11 +589,6 @@ export function ReportViewer({ open, onClose }: Props) {
 
     return { bar, donut, line, tablesWithoutChart };
   }, [report]);
-
-  const close = () => {
-    setVisible(false);
-    setTimeout(onClose, 300);
-  };
 
   if (!open) return null;
 
@@ -152,9 +598,20 @@ export function ReportViewer({ open, onClose }: Props) {
         visible ? "opacity-100" : "opacity-0 pointer-events-none"
       }`}
     >
-      <button onClick={close} className="fixed right-6 top-6 z-50 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-xl text-text-secondary hover:text-white">×</button>
+      <div className="fixed right-6 top-6 z-50 flex items-center gap-2">
+        {report && (
+          <button
+            onClick={handleDownload}
+            className="flex h-10 items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 text-sm font-semibold text-primary hover:bg-primary/20"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Download
+          </button>
+        )}
+        <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-surface text-xl text-text-secondary hover:text-white">×</button>
+      </div>
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-6 py-10" ref={reportRef}>
         {loading ? (
           <div className="flex flex-col items-center py-20">
             <div className="mb-4 h-10 w-10 animate-spin rounded-full border-[3px] border-border border-t-primary" />
@@ -229,7 +686,7 @@ export function ReportViewer({ open, onClose }: Props) {
               );
             })}
 
-            {/* ── Remaining tables (no matching chart) ── */}
+            {/* ── Remaining tables ── */}
             {charts.tablesWithoutChart.map((tbl, i) => (
               <div key={`tbl-${i}`}>
                 <h3 className="mb-2 font-mono text-xs tracking-wider text-text-muted">{tbl.title}</h3>
@@ -273,12 +730,15 @@ export function ReportViewer({ open, onClose }: Props) {
               Decision note: This report is based on recorded values in the uploaded dataset. Add cost, margin, and refund amounts to evaluate profitability rather than revenue alone.
             </div>
           </div>
-        ) : (
-          <div className="py-20 text-center text-text-muted">
-            <p>Could not generate a report from this data.</p>
-            <button onClick={close} className="mt-4 rounded-lg border border-border px-4 py-2 text-sm hover:bg-surface">Close</button>
+        ) : error ? (
+          <div className="py-20 text-center">
+            <p className="text-red-400 mb-2">{error}</p>
+            <div className="flex items-center justify-center gap-3 mt-4">
+              <button onClick={fetchReport} className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20">Retry</button>
+              <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-surface">Close</button>
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
